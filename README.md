@@ -70,9 +70,9 @@ Create your Task as a subclass of the main Workbench::Task class, and start writ
 ```ruby
 require 'workbench'
 class MyTask < Workbench::Task
-	def run
-		# Do something
-	end
+  def run
+    # Do something
+  end
 end
 ```
 
@@ -105,10 +105,10 @@ Inside my_task.rb:
 ```ruby
 require 'workbench'
 class MyTask < Workbench::Task
-	def run
-		# Do something
-		@prompt.render # gets the latest Prompt called "my_task"
-	end
+def run
+  # Do something
+  @prompt.render # gets the latest Prompt called "my_task"
+  end
 end
 ```
 
