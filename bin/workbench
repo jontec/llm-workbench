@@ -1,0 +1,3 @@
+#!/usr/bin/env ruby
+require "workbench"
+Workbench::CLI.start(ARGV)
