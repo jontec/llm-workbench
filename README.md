@@ -8,6 +8,10 @@ In order to use it, you will need to checkout the code and point your Gemfile at
 
 ```ruby
 gem "llm-workbench", path: "vendor/llm-workbench"
+```
+
+Then get your bundle updated:
+```
 bundle install
 ```
 
