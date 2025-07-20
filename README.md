@@ -4,7 +4,12 @@
 
 Please note: This repo is not ready for primetime and the gem it provides is not yet published on RubyGems.
 
-In order to use it, you will need to checkout the code and point your Gemfile at a vendored copy (or use the Gemfile config to point at the repo URL).
+In order to use it, you will need to checkout the code and point your Gemfile at a vendored copy (or use the Gemfile config to point at the repo URL):
+
+```ruby
+gem "llm-workbench", path: "vendor/llm-workbench"
+bundle install
+```
 
 Once that’s complete, you can run it with:
 
