@@ -58,7 +58,8 @@ module Workbench
       puts "  #{endpoints.size} endpoint(s) loaded"
       puts "  Base path: #{config.server_base_path || '(none)'}"
 
-      Rack::Handler::WEBrick.run(Server, Host: host, Port: port)
+      require 'rackup/handler/webrick'
+      Rackup::Handler::WEBrick.run(Server, Host: host, Port: port)
     end
 
     desc "deploy NAME", "Deploy a pipeline or task as an HTTP endpoint"
