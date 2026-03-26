@@ -68,8 +68,22 @@ module Workbench
       # TODO Phase 6: regenerate openapi.yml here
     end
 
-    desc "endpoints", "List all deployed endpoints"
+    desc "endpoints", "List, verify, or repair deployed endpoints"
+    option :check,   type: :boolean, desc: "Check integrity of all endpoint files; exits non-zero if issues found"
+    option :cleanup, type: :boolean, desc: "Describe issues and proposed fixes, then prompt before applying"
     def endpoints
+      if options[:check]
+        run_check
+      elsif options[:cleanup]
+        run_cleanup
+      else
+        list_endpoints
+      end
+    end
+
+    private
+
+    def list_endpoints
       all = Endpoint.all
       if all.empty?
         puts "No endpoints deployed. Run `workbench deploy <name>` to get started."
@@ -84,6 +98,76 @@ module Workbench
           puts "%-6s %s → %s: %s%s" % [verb, endpoint.route, type, target, async]
         end
       end
+    end
+
+    def run_check
+      issues = Endpoint.detect_issues
+      if issues.empty?
+        puts "All endpoints OK."
+        return
+      end
+
+      issues.each { |i| puts format_issue(i) }
+      exit 1
+    end
+
+    def run_cleanup
+      issues = Endpoint.detect_issues
+      if issues.empty?
+        puts "All endpoints OK. Nothing to clean up."
+        return
+      end
+
+      auto_fixable = issues.reject { |i| i[:type] == :duplicate }
+      manual       = issues.select { |i| i[:type] == :duplicate }
+
+      puts "Found #{issues.size} issue(s):\n\n"
+      issues.each { |i| puts "  #{format_issue(i)}" }
+
+      unless auto_fixable.empty?
+        puts "\nProposed fixes:"
+        auto_fixable.each { |i| puts "  #{format_fix(i)}" }
+
+        if yes?("\nApply #{auto_fixable.size} fix(es)?")
+          Endpoint.cleanup!(auto_fixable)
+          puts "Done."
+        else
+          puts "Aborted — no changes made."
+        end
+      end
+
+      unless manual.empty?
+        puts "\nThe following duplicate route(s) require manual resolution:"
+        manual.each { |i| puts "  #{format_issue(i)}" }
+      end
+    end
+
+    def format_issue(issue)
+      case issue[:type]
+      when :missing
+        "[missing]   #{issue[:verb]} #{issue[:route]} → '#{issue[:target]}' could not be resolved"
+      when :empty
+        "[empty]     #{issue[:route]} — #{issue[:file]} has no methods defined"
+      when :duplicate
+        "[duplicate] #{issue[:route]} — matched by: #{issue[:files].join(', ')}"
+      when :stale_spec
+        "[stale-spec] openapi.yml is out of sync with current endpoint definitions"
+      end
+    end
+
+    def format_fix(issue)
+      case issue[:type]
+      when :missing
+        "Remove #{issue[:verb]} entry from #{issue[:file]}#{' (and delete file if empty)' if would_empty_file?(issue)}"
+      when :empty
+        "Delete #{issue[:file]}"
+      end
+    end
+
+    def would_empty_file?(issue)
+      return false unless File.exist?(issue[:file])
+      yaml = YAML.load_file(issue[:file])
+      (yaml['methods'] || {}).size <= 1
     end
   end
 end
