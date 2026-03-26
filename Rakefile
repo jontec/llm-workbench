@@ -6,4 +6,6 @@ Rake::TestTask.new(:test) do |t|
   t.verbose = false
 end
 
+load 'lib/workbench/tasks/smoke_test.rake'
+
 task default: :test

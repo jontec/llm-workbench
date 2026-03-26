@@ -429,6 +429,7 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 | `lib/workbench/endpoint.rb` | New file — `Endpoint` class, file path↔route resolution, read/write |
 | `lib/workbench/server.rb` | New file — `Server` (Roda app), dynamic route registration from `endpoints/` |
 | `lib/workbench/input_validator.rb` | New file — `InputValidator` class, validates request body against pipeline input definitions |
+| `lib/workbench/tasks/smoke_test.rake` | New file — `workbench:smoke` Rake task, distributable end-to-end verification |
 | `lib/workbench/openapi_generator.rb` | New file — `OpenAPIGenerator` class, spec generation from endpoint and task metadata |
 | `lib/workbench/cli.rb` | Add `deploy`, `undeploy`, `endpoints` (with `--check`/`--cleanup`), `serve` commands |
 | `lib/workbench.rb` | Require `endpoint`, `server`, and `openapi_generator` |
@@ -469,16 +470,28 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 
 ### Pre-merge: End-to-End Verification (PR 1)
 
-Before PR 1 is marked ready, manually verify the full happy path against a real pipeline in the demo project:
+Unit tests cover individual components in isolation; this step confirms the pieces work together. It is implemented as `workbench:smoke`, a Rake task distributed with the gem.
+
+#### Smoke test design
+
+- **File:** `lib/workbench/tasks/smoke_test.rake` — shipped with the gem, not a standalone script
+- **Usage (user projects):** add `load 'workbench/tasks/smoke_test'` to the project `Rakefile`, then run `bundle exec rake workbench:smoke`
+- **Usage (gem development):** the gem's own `Rakefile` loads the same file, so contributors run `bundle exec rake workbench:smoke` from the repo root
+- **Invokes CLI via:** `bundle exec ruby -Ilib exe/workbench <command>` — does not assume the gem is installed as a system gem
+- **HTTP assertions via:** `Net::HTTP` (Ruby stdlib) — no additional test dependencies
+- **Server lifecycle:** spawns `workbench serve` as a background process via `spawn`, polls `Net::HTTP` until the port responds (up to ~5 s), kills the process in an `ensure` block so cleanup always runs
+- **Fixture approach:** creates a self-contained project in `Dir.mktmpdir` — a trivial task (echoes its input back as output), a one-task pipeline YAML, and a `workbench.yml` with a test API key. This makes the smoke test deterministic and independent of any user-defined pipelines.
+- **Optional real-pipeline mode:** users may pass a pipeline name and API key as Rake arguments (`bundle exec rake "workbench:smoke[my_pipeline,secret]"`) to run against a pipeline they've defined. The fixture is skipped and the task runs in the current working directory. This is useful for verifying that a specific pipeline works end-to-end before deploying it.
+
+#### Checklist (verified by the Rake task)
 
 - [ ] `workbench deploy <pipeline>` creates the correct endpoint file
 - [ ] `workbench serve` starts without error and loads the endpoint
-- [ ] A `curl` request with a valid API key and JSON inputs runs the pipeline and returns outputs
-- [ ] A `curl` request without an API key returns 401
+- [ ] A request with a valid API key and JSON inputs returns 200 with outputs
+- [ ] A request with a missing required input returns 422
+- [ ] A request without an API key returns 401
 - [ ] `workbench undeploy <pipeline>` removes the file; subsequent requests return 404
 - [ ] `workbench endpoints` correctly lists and then shows empty state after undeploy
-
-Unit tests cover individual components; this step confirms the pieces work together. Consider scripting this as a `bin/smoke_test` script so it can be repeated easily after future changes.
 
 ### Phase 6: OpenAPI
 - [ ] `workbench deploy` writes a valid `openapi.yml` as a side effect

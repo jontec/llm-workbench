@@ -14,3 +14,7 @@ group :test do
   gem "rake",      "~> 13.0"
   gem "rack-test", "~> 2.0"
 end
+
+gem "webrick", "~> 1.0"
+
+gem "rackup", "~> 2.0"
