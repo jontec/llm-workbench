@@ -42,6 +42,7 @@ GEM
     opentelemetry-semantic_conventions (1.11.0)
       opentelemetry-api (~> 1.0)
     public_suffix (6.0.2)
+    rake (13.3.1)
     securerandom (0.4.1)
     thor (1.4.0)
     tzinfo (2.0.6)
@@ -57,6 +58,7 @@ DEPENDENCIES
   json-schema (~> 5.2)
   minitest (~> 5.0)
   opentelemetry-sdk (~> 1.8)
+  rake (~> 13.0)
   thor (~> 1.4)
 
 BUNDLED WITH
