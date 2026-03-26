@@ -84,6 +84,36 @@ class ServerTest < Minitest::Test
   end
 
   # ---------------------------------------------------------------------------
+  # Input validation
+  # ---------------------------------------------------------------------------
+
+  def test_returns_422_for_missing_required_input
+    task_list = build_stub_task_list({ name: {} })
+    with_stub_pipeline({}, {}, task_list: task_list) do
+      post_json('/greet', {}, auth_header)
+      assert_equal 422, last_response.status
+    end
+  end
+
+  def test_422_response_names_missing_field
+    task_list = build_stub_task_list({ name: {} })
+    with_stub_pipeline({}, {}, task_list: task_list) do
+      post_json('/greet', {}, auth_header)
+      body = JSON.parse(last_response.body)
+      assert_equal 'Missing required inputs', body['error']
+      assert_includes body['missing'], 'name'
+    end
+  end
+
+  def test_optional_input_absent_still_returns_200
+    task_list = build_stub_task_list({ name: { optional: true } })
+    with_stub_pipeline({ greeting: 'hi' }, {}, task_list: task_list) do
+      post_json('/greet', {}, auth_header)
+      assert_equal 200, last_response.status
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Bad input
   # ---------------------------------------------------------------------------
 
@@ -142,8 +172,8 @@ class ServerTest < Minitest::Test
   # no-op. Real pipeline execution is covered by the end-to-end smoke test.
   # Note: Task#initialize calls load_prompt which hits the filesystem, making
   # real task instantiation unsuitable for these HTTP-layer unit tests.
-  def with_stub_pipeline(outputs = {}, captured_context = {})
-    pipeline = build_stub_pipeline(outputs, captured_context)
+  def with_stub_pipeline(outputs = {}, captured_context = {}, task_list: [])
+    pipeline = build_stub_pipeline(outputs, captured_context, task_list: task_list)
     Workbench::Pipeline.stub(:find,   pipeline) do
       Workbench::Pipeline.stub(:lambda, pipeline) do
         yield
@@ -151,13 +181,27 @@ class ServerTest < Minitest::Test
     end
   end
 
-  def build_stub_pipeline(outputs, captured_context)
+  # Builds a minimal task-list stub: an array of objects whose .class responds
+  # to input_definitions and output_definitions. Real Task instantiation is
+  # unsuitable here because Task#initialize hits the filesystem (load_prompt).
+  def build_stub_task_list(input_defs, output_defs = {})
+    task_class = Class.new do
+      define_singleton_method(:input_definitions)  { input_defs }
+      define_singleton_method(:output_definitions) { output_defs }
+    end
+    stub_task = Object.new
+    stub_task.define_singleton_method(:class) { task_class }
+    [stub_task]
+  end
+
+  def build_stub_pipeline(outputs, captured_context, task_list: [])
     # Use captured_context as the live context hash so that merge! calls
     # made by the server are reflected back to the caller for inspection.
     captured_context.merge!(outputs)
     pipeline = Object.new
     pipeline.define_singleton_method(:context) { captured_context }
     pipeline.define_singleton_method(:run) {}
+    pipeline.define_singleton_method(:task_list) { task_list }
     pipeline
   end
 end
