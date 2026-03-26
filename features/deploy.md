@@ -226,16 +226,18 @@ Content-Type: application/json
    - `--cleanup` — run the same checks, print a dry-run summary of proposed fixes, prompt for confirmation, then apply
 
    **Integrity checks performed by `--check` and `--cleanup`:**
-   - `[missing]` — a method entry references a pipeline or task that cannot be resolved
-   - `[stale-spec]` — `openapi.yml` is out of sync with current endpoint files and task/pipeline definitions (detected by regenerating the spec in memory and diffing against the file on disk)
-   - `[empty]` — an endpoint file exists but defines no methods
-   - `[duplicate]` — two files resolve to the same route after dasherization
+   - ✅ `[missing]` — a method entry references a pipeline or task that cannot be resolved
+   - ✅ `[empty]` — an endpoint file exists but defines no methods
+   - ✅ `[duplicate]` — two files resolve to the same route after dasherization
+   - `[stale-spec]` — `openapi.yml` is out of sync with current endpoint files and task/pipeline definitions (Phase 6)
 
    **Cleanup actions (applied only after confirmation):**
-   - Remove orphaned method entries from endpoint files
-   - Delete endpoint files that are empty after pruning
-   - Regenerate `openapi.yml` to match current state
-   - Cleanup only prunes; re-pointing an endpoint to a renamed pipeline or task is the developer's responsibility
+   - ✅ Remove orphaned method entries from endpoint files
+   - ✅ Delete endpoint files that are empty after pruning
+   - Regenerate `openapi.yml` to match current state (Phase 6)
+   - ✅ Cleanup only prunes; re-pointing an endpoint to a renamed pipeline or task is the developer's responsibility
+   - ✅ Duplicate routes flagged but not auto-fixed — require manual resolution
+   - ✅ 9 tests in `test/workbench/endpoint_integrity_test.rb`
 
 ### Phase 3: Roda Server
 
@@ -416,13 +418,13 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 
 ### Phase 2b: Endpoint Integrity (`endpoints --check` / `--cleanup`)
 - [ ] `workbench endpoints` lists all routes with their method→pipeline/task mappings
-- [ ] `workbench endpoints --check` reports `[missing]` for method entries referencing unknown pipelines/tasks
-- [ ] `workbench endpoints --check` reports `[empty]` for endpoint files with no methods
-- [ ] `workbench endpoints --check` reports `[duplicate]` when two files resolve to the same route
+- [x] `workbench endpoints --check` reports `[missing]` for method entries referencing unknown pipelines/tasks
+- [x] `workbench endpoints --check` reports `[empty]` for endpoint files with no methods
+- [x] `workbench endpoints --check` reports `[duplicate]` when two files resolve to the same route
 - [ ] `workbench endpoints --check` exits non-zero when any issue is found
 - [ ] `workbench endpoints --cleanup` prints a dry-run summary before prompting for confirmation
 - [ ] `workbench endpoints --cleanup` removes orphaned method entries and empty files after confirmation
-- [ ] Cleanup never re-points or creates entries — only prunes
+- [x] Cleanup never re-points or creates entries — only prunes
 
 ### Phase 4: Validation
 - [ ] Missing required inputs return a 422 with an error message naming the missing field
