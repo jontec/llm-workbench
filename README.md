@@ -18,7 +18,7 @@ bundle install
 Once that’s complete, you can run it with:
 
 ```bash
-bundle exec workbench start <my task or pipeline>
+bundle exec workbench start <name of task or pipeline>
 ```
 
 ## 🗺️ Roadmap
@@ -114,9 +114,9 @@ Inside my_task.rb:
 ```ruby
 require 'workbench'
 class MyTask < Workbench::Task
-def run
-  # Do something
-  @prompt.render # gets the latest Prompt called "my_task"
+  def run
+    # Do something
+    @prompt.render # gets the latest Prompt called "my_task"
   end
 end
 ```

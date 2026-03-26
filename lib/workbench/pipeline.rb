@@ -47,13 +47,23 @@ module Workbench
     def self.list(directory=PipelineDir)
       Dir.glob(File.join(PipelineDir, PipelineExtension))
     end
+  
+    def self.lambda(tasks=[])
+      raise "Lambda pipelines must be initialized with a list of one or more tasks" if tasks.empty?
+      new(nil, nil, true, tasks)
+    end
 
-    def initialize(filepath, options={})
-      path = File.dirname(filepath)
-      matching_files = Dir.glob(filepath)
-      raise "Cannot load pipeline from #{ filepath } -- file does not exist" if matching_files.empty?
+    def initialize(filepath, options={}, lambda=false, tasks=[])
+      # TODO: review need for options argument
       initialize_telemetry
-      load_from_file(matching_files.sort.first) # if there's a pipeline.yml AND pipeline.yaml, we'll take the latter
+      unless lambda
+        path = File.dirname(filepath)
+        matching_files = Dir.glob(filepath)
+        raise "Cannot load pipeline from #{ filepath } -- file does not exist" if matching_files.empty?
+        load_from_file(matching_files.sort.first) # if there's a pipeline.yml AND pipeline.yaml, we'll take the latter
+      else
+        create_anonymous_pipeline(tasks)
+      end
       @context = {}
     end
 
@@ -101,6 +111,14 @@ module Workbench
         yaml = YAML.load_file(path_to_pipeline)
         @name = yaml["name"]
         index_tasks(yaml["tasks"])
+      end
+    end
+  
+    def create_anonymous_pipeline(tasks, context={})
+      @telemetry.in_span("lambda_pipeline") do |span|
+        @name = "anonymous_lambda_#{ self.object_id }"
+        task_list = tasks.map { |t| { "name" => t } }
+        index_tasks(task_list)
       end
     end
 
