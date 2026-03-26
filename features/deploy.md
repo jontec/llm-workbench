@@ -205,18 +205,22 @@ Content-Type: application/json
 
 ### Phase 2: CLI Commands
 
-3. **Add `deploy` Thor command** (`lib/workbench/cli.rb`)
-   - Resolve name to task or pipeline; raise if neither found
+3. ✅ **Add `Workbench.resolve` helper** (`lib/workbench.rb`)
+   - Tries `Pipeline.find` first, then `Task.find`; raises `ArgumentError` with name included if neither resolves
+   - Unit tests in `test/workbench/resolve_test.rb` using Minitest stubs
+
+4. ✅ **Add `deploy` Thor command** (`lib/workbench/cli.rb`)
+   - Resolve name to task or pipeline via `Workbench.resolve`
    - Derive target file path from `--path` (or default dasherized name)
    - Delegate to `Endpoint.register!` with merged options
    - Print confirmation (or dry-run preview) of the file that will be written and the route it encodes
    - After writing, regenerate `openapi.yml` as a side effect (Phase 6)
 
-4. **Add `undeploy` Thor command** (`lib/workbench/cli.rb`)
+5. ✅ **Add `undeploy` Thor command** (`lib/workbench/cli.rb`)
    - Delegate to `Endpoint.unregister!`
    - After removing, regenerate `openapi.yml` as a side effect (Phase 6)
 
-5. **Add `endpoints` Thor command** (`lib/workbench/cli.rb`)
+6. ✅ **Add `endpoints` Thor command** (`lib/workbench/cli.rb`)
    - _(no flags)_ Pretty-print all routes and their method→pipeline/task mappings from `Endpoint.all`
    - `--check` — run all integrity checks (see below) and report issues; exit non-zero if any found, making it safe for use in CI pipelines
    - `--cleanup` — run the same checks, print a dry-run summary of proposed fixes, prompt for confirmation, then apply
@@ -342,17 +346,20 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 4. **Project config in `workbench.yml`, not in the manifest**
    - Server settings (port, host) and future database config belong to the project, not to individual deployments. Keeping them separate avoids coupling deployment metadata to infrastructure config.
 
-5. **Pipeline/task detection at deploy time**
+5. **Naming conventions: underscores in Ruby, hyphens in URLs**
+   - Task files, pipeline files, prompt files, and Ruby class names all follow standard Ruby/Rails conventions using underscores (`run_linter.rb`, `code_review.yml`). HTTP endpoint file names and URL paths use hyphens (`endpoints/run-linter.yml`, `/run-linter`), following REST API convention. The `deploy` command is the only place these worlds meet — it accepts an underscore name and handles the conversion automatically via `dasherize`. Developers working inside the framework never need to think about hyphens.
+
+6. **Pipeline/task detection at deploy time**
    - The `deploy` command resolves whether a name is a pipeline or task and records `type:` in the manifest. The server reads this at startup rather than re-detecting at request time, which is faster and makes the manifest self-documenting.
 
-6. **`server.base_path` as the namespace primitive**
+7. **`server.base_path` as the namespace primitive**
    - Rather than building a namespace concept into the `deploy` command or endpoint file format, a single `base_path` key in `workbench.yml` prefixes all routes uniformly. This covers the dominant use case (API versioning) with a one-liner and can be extended per-endpoint in a future phase if needed.
 
-7. **Tasks always execute inside a pipeline — never directly**
+8. **Tasks always execute inside a pipeline — never directly**
    - A current architectural constraint: tasks are never instantiated or run outside of a pipeline context. `Pipeline.lambda` exists to support single-task execution (e.g. `workbench start my_task`) while preserving the full pipeline execution environment — `@context`, telemetry, and the input/output lifecycle.
    - The server must follow the same rule: a `type: task` endpoint constructs a lambda pipeline wrapping that task rather than calling the task class directly. This keeps the execution path identical whether a pipeline was invoked from the CLI or via HTTP.
 
-8. **`Workbench::Request` — HTTP context for pipelines (forward-looking, not in Phase 1–4)**
+9. **`Workbench::Request` — HTTP context for pipelines (forward-looking, not in Phase 1–4)**
    - To support tasks that need awareness of the HTTP context (method, path, headers), a `Workbench::Request` struct will be introduced and attached to the pipeline when invoked via the server. Tasks may access it as `pipeline.request`, following Rails naming conventions (`request.method`, `request.path`, `request.headers`). When invoked from the CLI, `pipeline.request` is `nil`.
    - **Portability is the primary concern.** Tasks should treat `request` as optional context, not rely on it for core logic. The goal is that pipelines remain executable interchangeably across CLI, HTTP, and future contexts. Tasks that do use request context should declare it explicitly (e.g. a `uses_request_context` DSL annotation, analogous to `input`/`output`) so the dependency is visible and auditable.
    - This is intentionally deferred — introducing it too early risks developers building request-dependent tasks that can't be run from the CLI. The right moment is when there is a concrete use case that cannot be satisfied through inputs alone.
@@ -424,6 +431,19 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 ### Phase 5: Async (stretch)
 - [ ] `workbench deploy my_pipeline --async` causes the endpoint to return a `run_id` immediately
 - [ ] `GET /<name>/status/:run_id` returns current status and outputs when complete
+
+### Pre-merge: End-to-End Verification (PR 1)
+
+Before PR 1 is marked ready, manually verify the full happy path against a real pipeline in the demo project:
+
+- [ ] `workbench deploy <pipeline>` creates the correct endpoint file
+- [ ] `workbench serve` starts without error and loads the endpoint
+- [ ] A `curl` request with a valid API key and JSON inputs runs the pipeline and returns outputs
+- [ ] A `curl` request without an API key returns 401
+- [ ] `workbench undeploy <pipeline>` removes the file; subsequent requests return 404
+- [ ] `workbench endpoints` correctly lists and then shows empty state after undeploy
+
+Unit tests cover individual components; this step confirms the pieces work together. Consider scripting this as a `bin/smoke_test` script so it can be repeated easily after future changes.
 
 ### Phase 6: OpenAPI
 - [ ] `workbench deploy` writes a valid `openapi.yml` as a side effect
