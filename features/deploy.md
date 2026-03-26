@@ -10,6 +10,21 @@ Utilities for reviewing endpoints (`endpoints`) and removing endpoints (`undeplo
 
 This feature is designed with forward compatibility in mind: future work will add per-project and per-pipeline configuration (including database setup/teardown), and deployed pipelines should accommodate those config options without breaking changes.
 
+## Build Plan
+
+Development happens on a single `feature/api-endpoints` branch. Three PRs target `main` in sequence — each builds on the last and is independently mergeable.
+
+| PR | Phases | Description |
+|----|--------|-------------|
+| **PR 1** | 1, 2, 2b, 3, 4 | Core feature: endpoint files, CLI commands, integrity checks, Roda server, input validation. Mergeable when a user can `deploy` a pipeline, `serve` it, and call it over HTTP. |
+| **PR 2** | 5 | Async execution: `--async` flag, background pipeline runs, flat-file status persistence, polling route. |
+| **PR 3** | 6 | OpenAPI spec: auto-generation on `deploy`/`undeploy`/`serve`, drift detection in `endpoints --check`, Swagger UI at `/docs`. |
+
+**Working conventions:**
+- Commit at logical stopping points within each phase; prefix in-progress commits with `WIP:`
+- Check off success criteria in this file as each is verified
+- Each PR description references the relevant phase(s) of this plan
+
 ## CLI Interface
 
 ```bash
@@ -169,18 +184,24 @@ Content-Type: application/json
 
 ### Phase 1: Endpoint Files
 
-1. **Create `Workbench::Endpoint` class** (`lib/workbench/endpoint.rb`)
+1. ✅ **Create `Workbench::Endpoint` class** (`lib/workbench/endpoint.rb`)
    - Represents a single endpoint file: its route path (derived from file path), and the method→pipeline/task mappings it contains
    - `Endpoint.all` — `Dir.glob("endpoints/**/*.yml")`, parse each file, derive route from relative path
    - `Endpoint.register!(pipeline_or_task_name, options)` — resolve file path from `--path`, write or merge endpoint file
    - `Endpoint.unregister!(pipeline_or_task_name)` — remove the method entry; delete file if no methods remain
    - Detect whether `name` resolves to a pipeline or a task at registration time
 
-2. **File path → route path convention**
+2. ✅ **File path → route path convention**
    - Strip `endpoints/` prefix, strip `.yml` extension, dasherize each path segment
    - `endpoints/code_review.yml` → `/code-review`
    - `endpoints/tools/linter.yml` → `/tools/linter`
    - Create intermediate directories as needed on first write
+
+3. ✅ **Tests for `Workbench::Endpoint`** (`test/workbench/endpoint_test.rb`)
+   - `file_to_route` and `route_to_file`: pure conversion cases — simple name, nested path, underscored segments
+   - `register!`: verify file is written with correct structure; verify merging a second method into an existing file
+   - `unregister!`: verify method entry removal; verify file deletion when last method is removed; verify empty parent directory cleanup
+   - All filesystem tests run against a `Dir.mktmpdir` temporary directory, never the real `endpoints/` folder
 
 ### Phase 2: CLI Commands
 
