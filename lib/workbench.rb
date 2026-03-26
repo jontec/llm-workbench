@@ -8,6 +8,7 @@ require "workbench/pipeline"
 require "workbench/schema"
 require "workbench/config"
 require "workbench/endpoint"
+require "workbench/input_validator"
 require "workbench/server"
 require "workbench/cli"
 

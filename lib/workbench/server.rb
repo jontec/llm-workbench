@@ -54,10 +54,16 @@ module Workbench
       body, error = parse_json_body
       return error if error
 
-      type   = method_config['pipeline'] ? 'pipeline' : 'task'
-      target = method_config[type]
-
+      type     = method_config['pipeline'] ? 'pipeline' : 'task'
+      target   = method_config[type]
       pipeline = build_pipeline(type, target)
+
+      missing = InputValidator.new(pipeline).validate(body)
+      unless missing.empty?
+        response.status = 422
+        return { status: 'error', error: 'Missing required inputs', missing: missing }
+      end
+
       pipeline.context.merge!(body.transform_keys(&:to_sym))
       pipeline.run
 

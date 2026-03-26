@@ -270,13 +270,30 @@ Content-Type: application/json
 
 ### Phase 4: Input Validation
 
-9. **Validate request inputs against task/pipeline input definitions**
-   - Reuse existing `input_definitions` from `Task` subclasses
-   - Return 422 with descriptive error JSON if required inputs are missing or wrong type
+11. ✅ **Introduce `optional: true` annotation to the input DSL** (`lib/workbench/task.rb`)
+    - All declared inputs are required by default; annotate exceptions with `optional: true`
+    - Example: `input :name` (required), `input :format, optional: true` (optional)
+    - No changes needed to the storage mechanism — `@input_definitions[name] = opts` already captures any opts hash
+    - `fetch_input` currently returns `nil` silently for missing inputs; this phase moves enforcement earlier (at the HTTP boundary) rather than changing `fetch_input`'s behavior
+
+12. ✅ **Add `Workbench::InputValidator` class** (`lib/workbench/input_validator.rb`)
+    - `InputValidator.new(pipeline)` — accepts a pipeline instance
+    - `#external_inputs` — returns the hash of input definitions that are expected from the HTTP request body: all `input_definitions` across all tasks in the pipeline, minus any keys that appear in any task's `output_definitions` (those are satisfied internally by the pipeline)
+    - `#validate(body)` — checks each required external input is present in `body`; returns an array of error strings for missing fields (empty array = valid)
+    - Keeping validation in its own class keeps `Server` focused on HTTP concerns and makes the logic independently testable
+
+13. ✅ **Add validation to `Server#dispatch_endpoint`** (`lib/workbench/server.rb`)
+    - After `parse_json_body`, call `InputValidator.new(pipeline).validate(body)`
+    - If errors are present, return 422: `{ status: 'error', error: 'Missing required inputs', missing: [...] }`
+    - Pipeline construction (`build_pipeline`) must move before validation so the validator has a pipeline instance to inspect
+
+14. ✅ **Tests** (68 runs, 106 assertions, 0 failures)
+    - `test/workbench/input_validator_test.rb` — 8 unit tests for `InputValidator` logic
+    - 3 new cases in `test/workbench/server_test.rb`: 422 for missing required input, 422 body names missing field, 200 when only optional inputs absent
 
 ### Phase 5: Async Execution (stretch)
 
-10. **Async mode**
+15. **Async mode**
     - Assign a `run_id` (SecureRandom.hex) per invocation
     - Run pipeline in a background thread; write status and outputs to `.workbench/runs/<run_id>.json` on completion
     - Add `GET [base_path]/status/:run_id` route to read and return the run file; 404 if not yet written, 200 with outputs once complete
@@ -284,20 +301,20 @@ Content-Type: application/json
 
 ### Phase 6: OpenAPI Spec
 
-11. **Create `Workbench::OpenAPIGenerator` class** (`lib/workbench/openapi_generator.rb`)
+16. **Create `Workbench::OpenAPIGenerator` class** (`lib/workbench/openapi_generator.rb`)
     - `#generate` — build an OpenAPI 3.0 document from `Endpoint.all` and the task/pipeline input and output definitions
     - For each endpoint file: one OpenAPI path entry per HTTP method, with `requestBody` schema derived from `input_definitions` and `responses` schema derived from `output_definitions`
     - Include `info.title` from `project.name`, `info.version` from `server.base_path` (e.g. `v1`) if present, `servers` entry from host/port
     - `#generate!` — write spec to `openapi.yml` in the project root
     - `#stale?` — regenerate spec in memory, diff against `openapi.yml` on disk; return true if they differ (used by `endpoints --check`)
 
-12. **Integrate spec regeneration into existing commands** — no standalone `openapi` command
+17. **Integrate spec regeneration into existing commands** — no standalone `openapi` command
     - `deploy` and `undeploy` call `OpenAPIGenerator#generate!` after modifying endpoint files
     - `serve` calls `OpenAPIGenerator#generate!` at startup so the served spec always reflects current definitions
     - `endpoints --check` calls `OpenAPIGenerator#stale?` to detect drift
     - `endpoints --cleanup` includes spec regeneration in its set of proposed fixes
 
-13. **Serve spec and UI automatically in `Workbench::Server`**
+18. **Serve spec and UI automatically in `Workbench::Server`**
     - `GET [base_path]/openapi.json` — serve `openapi.yml` (written at startup) as JSON
     - `GET [base_path]/docs` — serve a minimal HTML page embedding Swagger UI via CDN, pointed at `[base_path]/openapi.json`
     - Both routes are enabled by default; disable via `server.openapi: false` in `workbench.yml`
@@ -411,6 +428,7 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 |------|--------|
 | `lib/workbench/endpoint.rb` | New file — `Endpoint` class, file path↔route resolution, read/write |
 | `lib/workbench/server.rb` | New file — `Server` (Roda app), dynamic route registration from `endpoints/` |
+| `lib/workbench/input_validator.rb` | New file — `InputValidator` class, validates request body against pipeline input definitions |
 | `lib/workbench/openapi_generator.rb` | New file — `OpenAPIGenerator` class, spec generation from endpoint and task metadata |
 | `lib/workbench/cli.rb` | Add `deploy`, `undeploy`, `endpoints` (with `--check`/`--cleanup`), `serve` commands |
 | `lib/workbench.rb` | Require `endpoint`, `server`, and `openapi_generator` |
@@ -440,8 +458,10 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 - [x] Cleanup never re-points or creates entries — only prunes
 
 ### Phase 4: Validation
-- [ ] Missing required inputs return a 422 with an error message naming the missing field
-- [ ] Server handles malformed JSON bodies gracefully (400)
+- [ ] All `input` declarations are treated as required by default; `optional: true` opts out
+- [ ] Missing required inputs return a 422 with an error message naming the missing field(s)
+- [ ] Inputs satisfied by a prior task's output are not required from the request body
+- [x] Server handles malformed JSON bodies gracefully (400) ← done in Phase 3
 
 ### Phase 5: Async (stretch)
 - [ ] `workbench deploy my_pipeline --async` causes the endpoint to return a `run_id` immediately
