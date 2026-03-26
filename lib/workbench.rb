@@ -6,7 +6,9 @@ require "workbench/prompt"
 require "workbench/task"
 require "workbench/pipeline"
 require "workbench/schema"
+require "workbench/config"
 require "workbench/endpoint"
+require "workbench/server"
 require "workbench/cli"
 
 module Workbench

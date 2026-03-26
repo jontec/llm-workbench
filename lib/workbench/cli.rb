@@ -30,6 +30,37 @@ module Workbench
       puts Pipeline.list
     end
 
+    desc "serve", "Start the Workbench HTTP server"
+    option :port,   type: :numeric, desc: "Port to bind", default: nil
+    option :host,   type: :string,  desc: "Host to bind", default: nil
+    option :config, type: :string,  desc: "Path to workbench.yml", default: 'workbench.yml'
+    def serve
+      config = Config.load(options[:config])
+
+      unless config.server_api_key
+        puts "Error: server.api_key must be set in #{options[:config]} before starting the server."
+        puts "Set it to a string value or an environment variable reference (e.g. \$API_KEY)."
+        exit 1
+      end
+
+      port = options[:port] || config.server_port
+      host = options[:host] || config.server_host
+
+      endpoints = Endpoint.all
+      if endpoints.empty?
+        puts "Warning: no endpoints found. Deploy a pipeline first with `workbench deploy <name>`."
+      end
+
+      Server.workbench_config    = config
+      Server.workbench_endpoints = endpoints
+
+      puts "Starting Workbench server on #{host}:#{port}"
+      puts "  #{endpoints.size} endpoint(s) loaded"
+      puts "  Base path: #{config.server_base_path || '(none)'}"
+
+      Rack::Handler::WEBrick.run(Server, Host: host, Port: port)
+    end
+
     desc "deploy NAME", "Deploy a pipeline or task as an HTTP endpoint"
     option :path,    aliases: '-p', type: :string,  desc: "HTTP path for the endpoint (default: /<name> dasherized)"
     option :method,  aliases: '-m', type: :string,  desc: "HTTP verb",    default: 'POST'

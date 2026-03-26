@@ -241,19 +241,32 @@ Content-Type: application/json
 
 ### Phase 3: Roda Server
 
-6. **Create `Workbench::Server` class** (`lib/workbench/server.rb`)
+6. ✅ **Add `Workbench::Config` class** (`lib/workbench/config.rb`)
+   - `Config.load(path)` — reads `workbench.yml`, returns a Config instance with defaults applied
+   - `Config.new(data)` — construct from a hash directly (used in tests)
+   - Accessors: `server_port`, `server_host`, `server_base_path`, `server_api_key` (resolves `$ENV_VAR` references), `server_openapi`, `project_name`, `project_task_dir`, `project_pipeline_dir`
+
+7. ✅ **Create `Workbench::Server` class** (`lib/workbench/server.rb`)
    - Subclasses `Roda`
-   - On startup, load `Endpoint.all` and register routes dynamically from file locations
-   - Each route: parse JSON body → build input hash → find and run pipeline/task → serialize outputs to JSON
+   - Class-level `workbench_config=` and `workbench_endpoints=` for configuration before startup
+   - Route block: authenticate → apply base_path → match endpoints → dispatch to pipeline
+   - base_path handled by flattening `base_segments + path_segments` into a single `r.is` call per endpoint
+   - Each route: parse JSON body → merge inputs into pipeline context → `pipeline.run` → return `pipeline.context` as outputs
+   - `parse_json_body` returns `[body, nil]` / `[nil, error_hash]` tuple (avoids invalid `next` in private method)
 
-7. **Add `serve` Thor command** (`lib/workbench/cli.rb`)
-   - Validate that `server.api_key` is set in `workbench.yml`; refuse to start if absent
-   - Instantiate `Workbench::Server` and run via Rack handler (e.g. `Rack::Handler::WEBrick` or Puma)
+8. ✅ **Add `serve` Thor command** (`lib/workbench/cli.rb`)
+   - Load `Config` from `workbench.yml`; refuse to start if `server.api_key` is absent
+   - Load `Endpoint.all`, configure `Server`, start via `Rack::Handler::WEBrick` (built-in; Puma is an optional upgrade)
    - Accept `--port` / `--host` options
-   - All requests are authenticated via `Authorization: Bearer <key>` before reaching any route; unauthenticated requests receive 401
 
-8. **Add `roda` dependency** (`llm-workbench.gemspec`)
+9. ✅ **Add `roda` dependency** (`llm-workbench.gemspec`)
    - `rack` is a transitive dependency of `roda` and need not be listed explicitly
+
+10. ✅ **Tests for `Workbench::Server`** (`test/workbench/server_test.rb`)
+    - Uses `Rack::Test` (`rack-test` gem added to test group) to send HTTP requests directly to the Roda app without starting a real server
+    - **Fixture note:** `Task#initialize` calls `load_prompt`, which hits the filesystem. To avoid this complexity in server tests — which are about HTTP behavior, not pipeline logic — pipeline execution is stubbed using a plain Ruby object with `run` and `context` methods. Full pipeline execution is verified in the end-to-end smoke test before PR 1 merges.
+    - Cases covered: 401 without API key, 401 with wrong key, 404 for unknown route, 405 wrong verb, 200 with correct outputs, 400 for malformed JSON body, base_path routing (200 with prefix, 404 without prefix)
+    - 11 tests in `test/workbench/server_test.rb`
 
 ### Phase 4: Input Validation
 
