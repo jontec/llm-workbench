@@ -420,7 +420,8 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 
 - Existing: `thor`, `activesupport`
 - New: `roda` (~> 3.0) — `rack` is a transitive dependency, not listed explicitly
-- Optional (for `serve`): `puma` or `webrick` as the Rack handler
+- New: `webrick` (~> 1.0) — WEBrick was removed from Ruby's stdlib in Ruby 3.0 and must now be declared explicitly
+- New: `rackup` (~> 2.0) — Rack 3.x extracted server handlers (`Rack::Handler`) into a separate `rackup` gem; `Rackup::Handler::WEBrick` replaces the old `Rack::Handler::WEBrick`
 
 ## File Changes Summary
 
@@ -432,8 +433,9 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 | `lib/workbench/tasks/smoke_test.rake` | New file — `workbench:smoke` Rake task, distributable end-to-end verification |
 | `lib/workbench/openapi_generator.rb` | New file — `OpenAPIGenerator` class, spec generation from endpoint and task metadata |
 | `lib/workbench/cli.rb` | Add `deploy`, `undeploy`, `endpoints` (with `--check`/`--cleanup`), `serve` commands |
-| `lib/workbench.rb` | Require `endpoint`, `server`, and `openapi_generator` |
-| `llm-workbench.gemspec` | Add `roda` dependency |
+| `lib/workbench.rb` | Require `endpoint`, `input_validator`, `server`, and (Phase 6) `openapi_generator` |
+| `llm-workbench.gemspec` | Add `roda`, `webrick`, `rackup` dependencies |
+| `Rakefile` | Add `rake test` task; load `smoke_test.rake` |
 | `endpoints/` (user project) | New directory — one YAML file per route, checked into version control |
 | `.workbench/runs/` (runtime) | Generated directory — one JSON file per async run; gitignored |
 | `workbench.yml` (user project) | New project-level config (created by user, documented here) |
@@ -441,27 +443,27 @@ In Phase 1, the server reads `workbench.yml` for `server.port`, `server.host`, a
 ## Success Criteria
 
 ### Phase 1–3: Core Deployment
-- [ ] `workbench deploy my_pipeline` writes a valid file to `endpoints/`
-- [ ] `workbench deploy my_pipeline --path /tools/linter` writes to `endpoints/tools/linter.yml`
-- [ ] `workbench serve` starts an HTTP server that responds to all routes in `endpoints/`
-- [ ] POSTing valid JSON inputs to an endpoint runs the pipeline and returns outputs
-- [ ] `workbench undeploy my_pipeline` removes the endpoint file; subsequent requests return 404
-- [ ] `workbench endpoints` lists all active routes and their pipeline/task mappings
+- [x] `workbench deploy my_pipeline` writes a valid file to `endpoints/`
+- [x] `workbench deploy my_pipeline --path /tools/linter` writes to `endpoints/tools/linter.yml`
+- [x] `workbench serve` starts an HTTP server that responds to all routes in `endpoints/`
+- [x] POSTing valid JSON inputs to an endpoint runs the pipeline and returns outputs
+- [x] `workbench undeploy my_pipeline` removes the endpoint file; subsequent requests return 404
+- [x] `workbench endpoints` lists all active routes and their pipeline/task mappings
 
 ### Phase 2b: Endpoint Integrity (`endpoints --check` / `--cleanup`)
-- [ ] `workbench endpoints` lists all routes with their method→pipeline/task mappings
+- [x] `workbench endpoints` lists all routes with their method→pipeline/task mappings
 - [x] `workbench endpoints --check` reports `[missing]` for method entries referencing unknown pipelines/tasks
 - [x] `workbench endpoints --check` reports `[empty]` for endpoint files with no methods
 - [x] `workbench endpoints --check` reports `[duplicate]` when two files resolve to the same route
-- [ ] `workbench endpoints --check` exits non-zero when any issue is found
-- [ ] `workbench endpoints --cleanup` prints a dry-run summary before prompting for confirmation
-- [ ] `workbench endpoints --cleanup` removes orphaned method entries and empty files after confirmation
+- [x] `workbench endpoints --check` exits non-zero when any issue is found
+- [x] `workbench endpoints --cleanup` prints a dry-run summary before prompting for confirmation
+- [x] `workbench endpoints --cleanup` removes orphaned method entries and empty files after confirmation
 - [x] Cleanup never re-points or creates entries — only prunes
 
 ### Phase 4: Validation
-- [ ] All `input` declarations are treated as required by default; `optional: true` opts out
-- [ ] Missing required inputs return a 422 with an error message naming the missing field(s)
-- [ ] Inputs satisfied by a prior task's output are not required from the request body
+- [x] All `input` declarations are treated as required by default; `optional: true` opts out
+- [x] Missing required inputs return a 422 with an error message naming the missing field(s)
+- [x] Inputs satisfied by a prior task's output are not required from the request body
 - [x] Server handles malformed JSON bodies gracefully (400) ← done in Phase 3
 
 ### Phase 5: Async (stretch)
@@ -477,21 +479,22 @@ Unit tests cover individual components in isolation; this step confirms the piec
 - **File:** `lib/workbench/tasks/smoke_test.rake` — shipped with the gem, not a standalone script
 - **Usage (user projects):** add `load 'workbench/tasks/smoke_test'` to the project `Rakefile`, then run `bundle exec rake workbench:smoke`
 - **Usage (gem development):** the gem's own `Rakefile` loads the same file, so contributors run `bundle exec rake workbench:smoke` from the repo root
-- **Invokes CLI via:** `bundle exec ruby -Ilib exe/workbench <command>` — does not assume the gem is installed as a system gem
+- **Invokes CLI via:** `bundle exec ruby -Ilib bin/workbench <command>` — does not assume the gem is installed as a system gem; falls back to `bundle exec workbench` if `bin/workbench` is absent
+- **`BUNDLE_GEMFILE`:** all subprocesses receive `BUNDLE_GEMFILE` pointing to the gem's `Gemfile` — required because the fixture project runs in a tmpdir with no Gemfile of its own, so Bundler would otherwise fail to resolve gems
 - **HTTP assertions via:** `Net::HTTP` (Ruby stdlib) — no additional test dependencies
-- **Server lifecycle:** spawns `workbench serve` as a background process via `spawn`, polls `Net::HTTP` until the port responds (up to ~5 s), kills the process in an `ensure` block so cleanup always runs
+- **Server lifecycle:** spawns `workbench serve` as a background process via `spawn`, polls `Net::HTTP` until the port responds (up to 10 s), kills the process in an `ensure` block so cleanup always runs; uses port 19292 to avoid conflicting with the default 9292
 - **Fixture approach:** creates a self-contained project in `Dir.mktmpdir` — a trivial task (echoes its input back as output), a one-task pipeline YAML, and a `workbench.yml` with a test API key. This makes the smoke test deterministic and independent of any user-defined pipelines.
 - **Optional real-pipeline mode:** users may pass a pipeline name and API key as Rake arguments (`bundle exec rake "workbench:smoke[my_pipeline,secret]"`) to run against a pipeline they've defined. The fixture is skipped and the task runs in the current working directory. This is useful for verifying that a specific pipeline works end-to-end before deploying it.
 
 #### Checklist (verified by the Rake task)
 
-- [ ] `workbench deploy <pipeline>` creates the correct endpoint file
-- [ ] `workbench serve` starts without error and loads the endpoint
-- [ ] A request with a valid API key and JSON inputs returns 200 with outputs
-- [ ] A request with a missing required input returns 422
-- [ ] A request without an API key returns 401
-- [ ] `workbench undeploy <pipeline>` removes the file; subsequent requests return 404
-- [ ] `workbench endpoints` correctly lists and then shows empty state after undeploy
+- [x] `workbench deploy <pipeline>` creates the correct endpoint file
+- [x] `workbench serve` starts without error and loads the endpoint
+- [x] A request with a valid API key and JSON inputs returns 200 with outputs
+- [x] A request with a missing required input returns 422
+- [x] A request without an API key returns 401
+- [x] `workbench undeploy <pipeline>` removes the file; subsequent requests return 404
+- [x] `workbench endpoints` correctly lists and then shows empty state after undeploy
 
 ### Phase 6: OpenAPI
 - [ ] `workbench deploy` writes a valid `openapi.yml` as a side effect
