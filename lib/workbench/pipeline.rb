@@ -1,5 +1,6 @@
 require 'yaml'
-require 'workbench'
+require_relative 'telemetry'
+require_relative 'task'
 module Workbench
   
   PipelineDir = "pipelines"
@@ -57,7 +58,6 @@ module Workbench
       # TODO: review need for options argument
       initialize_telemetry
       unless lambda
-        path = File.dirname(filepath)
         matching_files = Dir.glob(filepath)
         raise "Cannot load pipeline from #{ filepath } -- file does not exist" if matching_files.empty?
         load_from_file(matching_files.sort.first) # if there's a pipeline.yml AND pipeline.yaml, we'll take the latter
