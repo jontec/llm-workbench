@@ -63,7 +63,7 @@ workbench eval run --subject parse_itinerary_email
 workbench eval create parse_itinerary_email_basic --for parse_itinerary_email
 
 # Link an existing eval to one or more subjects
-workbench eval link shared_contract_eval --for parse_itinerary_email,parse_booking_email
+workbench eval link shared_contract --for parse_itinerary_email,parse_booking_email
 
 # Validate eval linkage across the project
 workbench eval check
@@ -77,7 +77,7 @@ workbench eval dataset inspect golden_emails
 ### `Workbench::Eval` (base class)
 
 ```ruby
-class ParseItineraryEmailBasicEval < Workbench::Eval
+class ParseItineraryEmailBasic < Workbench::Eval
   evaluates :parse_itinerary_email          # repeatable; drives --subject lookup
   dataset   :golden_emails
   metric    :exact_match                    # type: :average is default
@@ -155,7 +155,7 @@ file.read           # String — file contents
 
 ## Implementation Plan
 
-### Phase 1: Core Data Model
+### Phase 1: Core Data Model ✅
 
 **1. `Workbench::Eval` base class** (`lib/workbench/eval.rb`)
 
@@ -206,26 +206,29 @@ Sort order defaults to ascending; configurable via `sort:`.
 
 ---
 
-### Phase 2: Eval Runner + `workbench eval run`
+### Phase 2: Eval Runner + `workbench eval run` ✅
 
 **6. `Workbench::EvalRunner`** (`lib/workbench/eval_runner.rb`)
 
-- `EvalRunner.new(eval_class)` — holds the eval class
+- `EvalRunner.new(eval_class, continue_on_error: false)` — holds the eval class and error mode
 - `#run` — full lifecycle:
   1. Resolve dataset; discover cases
   2. Instantiate eval; call `setup` if defined
   3. For each declared subject:
-     a. For each case (in discovery order): set `current_subject` and `current_case` on instance; call `instance.run`; catch and record any uncaught exceptions as case errors
+     a. For each case (in discovery order): set `current_subject` and `current_case` on instance; call `instance.run`; on exception either re-raise (default) or record as case error and continue (`--continue-on-error`)
   4. Call `teardown` if defined
   5. Aggregate per-subject metrics by declared type
   6. Compute per-subject `pass_rate` and `pass_count` from `passed:` booleans
-  7. Return structured `EvalRunResult`
-- `EvalRunResult` — value object holding run_id, timestamps, per-subject results, per-case results
+  7. Return `EvalRunResult` struct
+- `EvalRunResult`, `SubjectResult` — Struct value objects holding run_id, timestamps, per-subject and per-case results
+- `EvalRunner.print_result(result)` — pretty-prints to stdout
 
-**7. `workbench eval` subcommand group** (`lib/workbench/cli.rb`)
+**7. `workbench eval` subcommand group** (`lib/workbench/eval_cli.rb`, registered in `lib/workbench/cli.rb`)
 
-- Introduce `Workbench::EvalCLI < Thor` registered as `subcommand "eval", EvalCLI` in `Workbench::CLI`
-- `eval run --name` / `--subject` — validates exactly one provided; resolves eval(s); calls `EvalRunner#run` for each; prints summary
+- `Workbench::EvalCLI < Thor` registered as `subcommand "eval", EvalCLI` in `Workbench::CLI`
+- `eval run --name` / `--subject` / `--continue-on-error` — validates exactly one of name/subject; resolves eval class(es); runs via `EvalRunner`; prints result
+- **Note:** `run` is a Thor reserved word. The method is named `run_eval` with `map "run" => :run_eval` so `workbench eval run` works as expected.
+- `--subject` errors immediately if the subject has no `evaluated_by` declarations. Error message will reference `workbench eval check` once that command is built (Phase 6).
 
 **Pretty-printed console output:**
 
@@ -234,28 +237,27 @@ Eval:     parse_itinerary_email_basic_eval
 Subject:  parse_itinerary_email
 Dataset:  golden_emails (10 cases)
 
-  Pass rate:    8/10  (80.0%)
+  Pass rate:  8/10  (80.0%)
   exact_match:  0.750
 
   FAILED  case_04  (exact_match: 0.0)
-  FAILED  case_09  (exact_match: 0.0)
-
-Results written to eval_results/2026-04-23/parse_itinerary_email_basic_eval/
+  ERROR   case_05  RuntimeError: pipeline crashed
 ```
 
 **Tests:**
 
-- `test/workbench/eval_runner_test.rb` — lifecycle ordering (setup → cases → teardown), metric aggregation by type, pass_rate computation, error capture; pipeline execution stubbed to avoid filesystem dependency
+- `test/workbench/eval_runner_test.rb` — lifecycle ordering (setup → cases → teardown), multi-subject sequencing, metric aggregation by all five types, pass_rate computation, `continue_on_error` behavior, error message format; pipeline execution stubbed via eval subclass that calls `record_case_result` directly (22 tests)
 
 ---
 
-### Phase 3: Result Artifacts
+### Phase 3: Result Artifacts ✅
 
 **8. `Workbench::EvalResultWriter`** (`lib/workbench/eval_result_writer.rb`)
 
-- `EvalResultWriter.new(result, output_dir)` — accepts `EvalRunResult`
-- `#write` — writes `summary.txt` and `run.json` to `output_dir`
+- `EvalResultWriter.new(result, base_dir: 'eval_results')` — accepts `EvalRunResult`
+- `#write` — creates output dir, writes `summary.txt` and `run.json`, returns the output path
 - Output path: `eval_results/YYYY-MM-DD/<eval_name>/`; if path already exists, appends `_2`, `_3`, etc.
+- CLI prints `Results written to <path>/` after each run
 
 **`run.json` structure (normalized for future SQLite ingestion):**
 
@@ -269,22 +271,18 @@ Results written to eval_results/2026-04-23/parse_itinerary_email_basic_eval/
   "subjects": [
     {
       "subject_name": "parse_itinerary_email",
-      "subject_type": "pipeline",
       "case_count": 10,
       "pass_count": 8,
       "fail_count": 2,
       "error_count": 0,
       "pass_rate": 0.8,
-      "metrics": {
-        "exact_match": { "type": "average", "value": 0.75 }
-      },
+      "metrics": { "exact_match": 0.75 },
       "cases": [
         {
           "case_id": "case_01",
           "group_name": null,
           "passed": true,
           "error": null,
-          "duration_ms": 1230,
           "metrics": { "exact_match": 1.0 },
           "outputs": {}
         }
@@ -294,15 +292,17 @@ Results written to eval_results/2026-04-23/parse_itinerary_email_basic_eval/
 }
 ```
 
-**`summary.txt`** — fixed-width plain text; same information as console output, formatted for reading in a terminal or diffing in git.
+Note: `subject_type` and `duration_ms` omitted from MVP; metrics serialized as flat `{ name: value }` without type annotation (type can be added in a future iteration alongside the SQLite store).
+
+**`summary.txt`** — fixed-width plain text including eval name, run ID, timestamps, dataset, per-subject pass rate, named metrics, and FAILED/ERROR case entries.
 
 **Tests:**
 
-- `test/workbench/eval_result_writer_test.rb` — file creation, correct paths, JSON structure, collision-avoidance suffix
+- `test/workbench/eval_result_writer_test.rb` — output dir structure, date stamping, collision-avoidance suffix, auto-creation of nested dirs, `run.json` structure and content, `summary.txt` content, error entries, trailing newline (22 tests)
 
 ---
 
-### Phase 4: Advanced Dataset Discovery
+### Phase 4: Advanced Dataset Discovery ✅
 
 **9. Extend `Workbench::Dataset`** (`lib/workbench/dataset.rb`)
 
@@ -350,55 +350,69 @@ case:
     - "expected/**"
 ```
 
+**Implementation notes:**
+
+- `case.include`/`case.ignore` layer on top of top-level patterns (AND logic)
+- `@warnings` collected during `cases` call and exposed via `#warnings`; consumed by `dataset inspect` in Phase 5
+- `EvalCase#files` always contains all discovered files; `inputs`/`outputs` are classified subsets
+
 **Tests:**
 
-- Extend `test/workbench/dataset_test.rb` — `directory: case`, `directory: group`, hints, nested filters, empty-folder skipping; all against `Dir.mktmpdir`
+- Extended `test/workbench/dataset_test.rb` — `directory: case` (dirs-as-cases, sibling file exclusion, empty dir skipping, nested payload), `directory: group` (group assignment, stray file exclusion, warnings, group-level ignore), `case.inputs`/`case.outputs` hints (classification, unmatched files remain in `files`), `case.include`/`case.ignore` (16 new tests)
 
 ---
 
-### Phase 5: `workbench eval dataset inspect`
+### Phase 5: `workbench eval dataset inspect` ✅
 
-**10. Add `dataset inspect` command** (`lib/workbench/cli.rb`)
+**10. `Workbench::EvalDatasetCLI`** (`lib/workbench/eval_dataset_cli.rb`)
 
-- `Workbench::EvalDatasetCLI < Thor` registered as `subcommand "dataset", EvalDatasetCLI` inside `EvalCLI`
-- `dataset inspect NAME` — resolves dataset as runtime would; prints groups, cases, file membership; surfaces warnings
+- Registered as `subcommand "dataset", EvalDatasetCLI` inside `EvalCLI`
+- `dataset inspect NAME` — resolves dataset as runtime would; prints header, groups/cases/file membership, and warnings
+- Note: `inspect` is defined on Ruby's `Object`; method is named `show` with `map "inspect" => :show`
 
-Example output:
+Example output (group mode):
 
 ```
-Dataset:  golden_emails
-Path:     fixtures/golden_emails
-Mode:     default (directories as cases)
-Cases:    3
+Dataset:  invoices_by_difficulty
+Path:     fixtures/invoices_by_difficulty
+Mode:     group (2 groups, 4 cases)
 
-  case_01/
-    email.txt       → input
-    expected.json   → output
+  [easy]
+    case_01/
+      input/email.txt     → input
+      expected/result.json → output
+    case_02/
+      input/email.txt     → input
 
-  case_02/
-    email.txt       → input
-    expected.json   → output
+  [hard]
+    case_01/
+      input/email.txt     → input
 
-  case_03/
-    email.txt       → input
-    expected.json   → output
+  Warnings (1):
+    easy/stray.txt — file directly under group directory (ignored)
 ```
+
+**Tests:**
+
+- `test/workbench/eval_dataset_cli_test.rb` — header content (name, path, mode label, case/group counts, singular/plural), case listing (ids, files, input/output annotations, unannotated files), group mode (group labels, case nesting), warnings (stray files shown, no section when clean), error handling (17 tests)
 
 ---
 
-### Phase 6: CLI Developer Ergonomics
+### Phase 6: CLI Developer Ergonomics ✅
+
+**Naming convention:** Evals are named without a `_eval` suffix. The name passed to `create` and `link` is used as-is for the filename and class name. Example: `workbench eval create parse_itinerary_email_basic` → `evals/parse_itinerary_email_basic.rb`, class `ParseItineraryEmailBasic`. This mirrors how tasks and pipelines are named.
 
 **11. `workbench eval create NAME --for SUBJECT[,SUBJECT]`**
 
-- Creates `evals/<name>_eval.rb` with scaffolded class inheriting `Workbench::Eval`
+- Creates `evals/<name>.rb` with scaffolded class inheriting `Workbench::Eval`
 - Creates `datasets/<name>.yml` stub (name field populated)
-- Patches each subject file to add `evaluated_by :<name>_eval` if not already present
+- Patches each subject file to add `evaluated_by :<name>` if not already present
 - Adds `evaluates :subject` declaration for each subject in the eval scaffold
 
 **12. `workbench eval link NAME --for SUBJECT[,SUBJECT]`**
 
-- Patches subject files to add `evaluated_by` if not already present
-- Patches eval file to add `evaluates` if not already present
+- Patches subject files to add `evaluated_by :<name>` if not already present
+- Patches eval file to add `evaluates :subject` if not already present
 - Does not overwrite other file content
 
 **13. `workbench eval check`**
@@ -406,6 +420,12 @@ Cases:    3
 - Runs all integrity checks; exits non-zero if any issues found (safe for CI)
 - Reports `[missing-eval]`, `[missing-subject]`, `[orphaned-eval]`, `[broken-dataset]`
 - Does not modify files
+- **Implementation note:** `EvalChecker` parses eval, task, and pipeline files as text (regex scanning for DSL declarations) rather than requiring them. This avoids global `Eval.subclasses` registry contamination and CWD-relative path dependencies — critical for correctness in tests and in projects run from non-standard working directories. Dataset checking uses direct fixture path resolution rather than `Dataset.find`.
+
+**Tests:**
+
+- `test/workbench/eval_scaffolder_test.rb` — eval file creation and content, dataset stub creation, no-overwrite of existing dataset, multi-subject scaffolding, task/pipeline patching, idempotent patching (no duplicates), `link` patching and missing-eval error (18 tests)
+- `test/workbench/eval_checker_test.rb` — clean project, all four issue types (detected and not detected), format_issue output for all types (22 tests)
 
 ---
 
@@ -499,7 +519,7 @@ No new gem dependencies. All new functionality uses Ruby stdlib and existing wor
 
 ### PR 3: CLI Ergonomics
 
-- [ ] `workbench eval create <name> --for <subject>` creates eval file, dataset stub, and patches subject
+- [ ] `workbench eval create <name> --for <subject>` creates `evals/<name>.rb`, `datasets/<name>.yml`, and patches subject
 - [ ] `workbench eval create` with multiple `--for` subjects patches all of them
 - [ ] `workbench eval link <name> --for <subject>` patches existing eval and subject files
 - [ ] `workbench eval check` reports `[missing-eval]` for unresolvable `evaluated_by` references

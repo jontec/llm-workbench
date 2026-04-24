@@ -1,7 +1,10 @@
 require "thor"
+require_relative "eval_cli"
 
 module Workbench
   class CLI < Thor
+    desc "eval SUBCOMMAND", "Eval commands (run, create, link, check, dataset)"
+    subcommand "eval", EvalCLI
     desc "start", "start <pipeline> or start /path/to/pipeline[.y*ml] Run the specified pipeline or task"
     option :verbose, type: :boolean
     option :input, type: :hash, desc: "Input values for the pipeline"

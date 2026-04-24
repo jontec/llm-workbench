@@ -46,6 +46,13 @@ bundle exec workbench start <name of task or pipeline>
 - **Async API execution**: `--async` flag for `deploy` — returns a `run_id` immediately and runs the pipeline in the background; status polling via `GET /<name>/status/:run_id`
 - **OpenAPI spec generation**: Auto-generate `openapi.yml` on `deploy`/`undeploy`/`serve`; drift detection in `endpoints --check`; Swagger UI at `/docs`
 
+#### Evals
+
+- **LLM-as-judge helpers**: Built-in support for calling an LLM to score eval outputs against a rubric
+- **VCR integration**: Record and replay LLM/HTTP calls for stable, repeatable evals
+- **Thresholds and CI gating**: Fail CI when pass rate or metric values fall below configured thresholds
+- **SQLite-backed result store**: Persist and query eval results over time; local eval browser
+
 # LLM Workbench
 
 LLM Workbench is an opinionated framework designed to help you build flexible (and hopefully maintainable!) LLM-enabled pipelines in Ruby. You can run these pipelines one-off from the CLI or host them as HTTP API endpoints with a single command.
@@ -196,6 +203,75 @@ workbench undeploy my_pipeline   # remove an endpoint
 
 Endpoint files live in `endpoints/` and are checked into version control alongside your pipelines and tasks. The file path encodes the HTTP route — `endpoints/tools/linter.yml` is served at `/tools/linter`.
 
+## Evaluate Pipelines and Tasks
+
+Any pipeline or task can be evaluated against a curated fixture dataset.
+
+**1. Scaffold an eval:**
+
+```bash
+workbench eval create parse_email_basic --for parse_email
+# → writes evals/parse_email_basic.rb
+# → writes datasets/parse_email_basic.yml
+# → patches tasks/parse_email.rb with evaluated_by
+```
+
+**2. Add fixture data** to `fixtures/parse_email_basic/` — one subdirectory per case:
+
+```
+fixtures/parse_email_basic/
+  case_01/
+    input.txt
+    expected.json
+  case_02/
+    input.txt
+    expected.json
+```
+
+**3. Write your eval logic** in `evals/parse_email_basic.rb`:
+
+```ruby
+class ParseEmailBasic < Workbench::Eval
+  evaluates :parse_email
+  dataset   :parse_email_basic
+  metric    :exact_match
+
+  def run
+    result  = run_subject(current_subject, inputs: { email: current_case.inputs.first.read })
+    correct = result[:bookings] == JSON.parse(current_case.outputs.first.read)
+    record_case_result(
+      passed:  correct,
+      metrics: { exact_match: correct ? 1.0 : 0.0 }
+    )
+  end
+end
+```
+
+**4. Run it:**
+
+```bash
+workbench eval run --name parse_email_basic
+```
+
+```
+ParseEmailBasic — parse_email (2 cases)
+  pass_rate:   1.00
+  exact_match: 1.00
+
+Results written to eval_results/2026-04-23/parse_email_basic/
+```
+
+**Other useful commands:**
+
+```bash
+workbench eval run --subject parse_email      # run all evals for a subject
+workbench eval dataset inspect parse_email_basic  # debug fixture discovery
+workbench eval check                          # validate all eval linkage (CI-safe)
+workbench eval link parse_email_basic --for parse_email  # link an existing eval
+```
+
+Eval result files live in `eval_results/YYYY-MM-DD/<eval_name>/` and include a human-readable `summary.txt` and a machine-readable `run.json`.
+
 # What is LLM Workbench?
 
 ## What Workbench Offers
@@ -212,6 +288,8 @@ The framework defines a few primitives to help you get started, largely inspired
     - **Model**: A specific version of model like "gpt-4", "claude-3.7-sonnet", or "gemini-1.5-pro"
 - **Schema**: A JSON schema that can be used with a Prompt inside a Task to constrain the output of an LLM response
 - **Endpoint**: A YAML file in `endpoints/` that maps an HTTP method and route to a pipeline or task. Created by `workbench deploy` and loaded by `workbench serve`.
+- **Eval**: A Ruby class that defines evaluation logic for a Task or Pipeline — what dataset to run against, what metrics to compute, and how to score each case. Evals are attached to subjects via `evaluated_by` and run with `workbench eval run`.
+- **Dataset**: A YAML file in `datasets/` describing a fixture directory structure. Supports flexible case discovery: flat files, subdirectory-as-case, or group/case hierarchies with typed input/output hints.
 - **`workbench.yml`**: A project-level config file that sets server options (port, host, base path, API key) and project conventions (task/pipeline directories). Checked into version control.
 
 Workbench provides useful tools (e.g. lookup, execution, and logging support) for each primitive that you can leverage inside the code you write for each Task.
@@ -222,6 +300,7 @@ Workbench provides useful tools (e.g. lookup, execution, and logging support) fo
     - Because it uses OpenTelemetry under the hood, Workbench's backend is pluggable and log data can be pushed to sources like Datadog or ML-native platforms, like MLFlow for monitoring and analysis
 - **State management**: Pipelines and Tasks can accept inputs, and during a Pipeline's lifecycle, task outputs are automatically pushed to the default Pipeline context. Tasks have access to and can inspect the full stack--or prior tasks, if needed--through a Pipeline object exposed at runtime.
 - **API publishing**: Any pipeline or task can be deployed as an authenticated HTTP endpoint using `workbench deploy` and served with `workbench serve` (backed by [Roda](https://roda.jeremyevans.net/)). Task and pipeline definitions are automatically aggregated and used to validate API requests and shape API output.
+- **Evals**: Tasks and Pipelines can be evaluated against curated fixture datasets using `workbench eval run`. Evals declare metrics (with type-driven aggregation), compute pass rate automatically, and write structured results to `eval_results/` for human review and future CI gating.
 
 ## License
 
