@@ -362,33 +362,39 @@ case:
 
 ---
 
-### Phase 5: `workbench eval dataset inspect`
+### Phase 5: `workbench eval dataset inspect` ✅
 
-**10. Add `dataset inspect` command** (`lib/workbench/cli.rb`)
+**10. `Workbench::EvalDatasetCLI`** (`lib/workbench/eval_dataset_cli.rb`)
 
-- `Workbench::EvalDatasetCLI < Thor` registered as `subcommand "dataset", EvalDatasetCLI` inside `EvalCLI`
-- `dataset inspect NAME` — resolves dataset as runtime would; prints groups, cases, file membership; surfaces warnings
+- Registered as `subcommand "dataset", EvalDatasetCLI` inside `EvalCLI`
+- `dataset inspect NAME` — resolves dataset as runtime would; prints header, groups/cases/file membership, and warnings
+- Note: `inspect` is defined on Ruby's `Object`; method is named `show` with `map "inspect" => :show`
 
-Example output:
+Example output (group mode):
 
 ```
-Dataset:  golden_emails
-Path:     fixtures/golden_emails
-Mode:     default (directories as cases)
-Cases:    3
+Dataset:  invoices_by_difficulty
+Path:     fixtures/invoices_by_difficulty
+Mode:     group (2 groups, 4 cases)
 
-  case_01/
-    email.txt       → input
-    expected.json   → output
+  [easy]
+    case_01/
+      input/email.txt     → input
+      expected/result.json → output
+    case_02/
+      input/email.txt     → input
 
-  case_02/
-    email.txt       → input
-    expected.json   → output
+  [hard]
+    case_01/
+      input/email.txt     → input
 
-  case_03/
-    email.txt       → input
-    expected.json   → output
+  Warnings (1):
+    easy/stray.txt — file directly under group directory (ignored)
 ```
+
+**Tests:**
+
+- `test/workbench/eval_dataset_cli_test.rb` — header content (name, path, mode label, case/group counts, singular/plural), case listing (ids, files, input/output annotations, unannotated files), group mode (group labels, case nesting), warnings (stray files shown, no section when clean), error handling (17 tests)
 
 ---
 
