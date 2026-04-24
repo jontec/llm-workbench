@@ -32,6 +32,8 @@ module Workbench
         runner = EvalRunner.new(klass, continue_on_error: options[:continue_on_error])
         result = runner.run
         EvalRunner.print_result(result)
+        output_dir = EvalResultWriter.new(result).write
+        puts "Results written to #{output_dir}/"
       end
     end
 

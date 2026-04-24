@@ -250,13 +250,14 @@ Dataset:  golden_emails (10 cases)
 
 ---
 
-### Phase 3: Result Artifacts
+### Phase 3: Result Artifacts ✅
 
 **8. `Workbench::EvalResultWriter`** (`lib/workbench/eval_result_writer.rb`)
 
-- `EvalResultWriter.new(result, output_dir)` — accepts `EvalRunResult`
-- `#write` — writes `summary.txt` and `run.json` to `output_dir`
+- `EvalResultWriter.new(result, base_dir: 'eval_results')` — accepts `EvalRunResult`
+- `#write` — creates output dir, writes `summary.txt` and `run.json`, returns the output path
 - Output path: `eval_results/YYYY-MM-DD/<eval_name>/`; if path already exists, appends `_2`, `_3`, etc.
+- CLI prints `Results written to <path>/` after each run
 
 **`run.json` structure (normalized for future SQLite ingestion):**
 
@@ -270,22 +271,18 @@ Dataset:  golden_emails (10 cases)
   "subjects": [
     {
       "subject_name": "parse_itinerary_email",
-      "subject_type": "pipeline",
       "case_count": 10,
       "pass_count": 8,
       "fail_count": 2,
       "error_count": 0,
       "pass_rate": 0.8,
-      "metrics": {
-        "exact_match": { "type": "average", "value": 0.75 }
-      },
+      "metrics": { "exact_match": 0.75 },
       "cases": [
         {
           "case_id": "case_01",
           "group_name": null,
           "passed": true,
           "error": null,
-          "duration_ms": 1230,
           "metrics": { "exact_match": 1.0 },
           "outputs": {}
         }
@@ -295,11 +292,13 @@ Dataset:  golden_emails (10 cases)
 }
 ```
 
-**`summary.txt`** — fixed-width plain text; same information as console output, formatted for reading in a terminal or diffing in git.
+Note: `subject_type` and `duration_ms` omitted from MVP; metrics serialized as flat `{ name: value }` without type annotation (type can be added in a future iteration alongside the SQLite store).
+
+**`summary.txt`** — fixed-width plain text including eval name, run ID, timestamps, dataset, per-subject pass rate, named metrics, and FAILED/ERROR case entries.
 
 **Tests:**
 
-- `test/workbench/eval_result_writer_test.rb` — file creation, correct paths, JSON structure, collision-avoidance suffix
+- `test/workbench/eval_result_writer_test.rb` — output dir structure, date stamping, collision-avoidance suffix, auto-creation of nested dirs, `run.json` structure and content, `summary.txt` content, error entries, trailing newline (22 tests)
 
 ---
 
