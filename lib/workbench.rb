@@ -1,4 +1,8 @@
 require "workbench/version"
+require "workbench/eval_file"
+require "workbench/eval_case"
+require "workbench/dataset"
+require "workbench/eval"
 require "workbench/open_telemetry/exporters"
 require "workbench/telemetry"
 require "workbench/llm_provider"
