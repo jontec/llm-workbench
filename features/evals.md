@@ -8,13 +8,11 @@ Evals follow Workbench's existing conventions: declarative DSL on subject classe
 
 ## Build Plan
 
-Development happens on a single `feature/evals` branch. Three PRs target `main` in sequence.
+Development happened on a single `feature/evals` branch, merged to `main` in one PR covering all 6 phases.
 
 | PR | Phases | Description |
 |----|--------|-------------|
-| **PR 1** | 1, 2, 3 | Core runtime: `Workbench::Eval`, `Workbench::Dataset`, `Workbench::EvalRunner`, basic case discovery, `workbench eval run`, console output, result artifacts. Mergeable when a user can write an eval, point it at a dataset, run it, and get results. |
-| **PR 2** | 4, 5 | Full dataset discovery: `directory: case/group`, `case.inputs`/`case.outputs` hints, `group`/`case` include/ignore filters, `workbench eval dataset inspect`. |
-| **PR 3** | 6 | CLI ergonomics: `workbench eval create`, `workbench eval link`, `workbench eval check`. |
+| **PR 2** ✅ | 1–6 | Full evals feature: core data model, eval runner, result artifacts, advanced dataset discovery, `dataset inspect`, and CLI ergonomics (`eval create`, `eval link`, `eval check`). |
 
 ## CLI Interface
 
@@ -475,56 +473,56 @@ No new gem dependencies. All new functionality uses Ruby stdlib and existing wor
 | `lib/workbench/eval_file.rb` | New — normalized file object |
 | `lib/workbench/task.rb` | Add `evaluated_by` class DSL |
 | `lib/workbench/pipeline.rb` | Add `evaluated_by` class DSL |
+| `lib/workbench/eval_scaffolder.rb` | New — scaffolds eval file, dataset stub, patches subjects |
+| `lib/workbench/eval_checker.rb` | New — text-based integrity checks for eval/subject linkage |
+| `lib/workbench/eval_dataset_cli.rb` | New — `dataset inspect` subcommand |
 | `lib/workbench/cli.rb` | Add `EvalCLI` subcommand group; `EvalDatasetCLI` nested group |
 | `lib/workbench.rb` | Require new files |
 | `test/workbench/eval_test.rb` | New |
 | `test/workbench/eval_runner_test.rb` | New |
 | `test/workbench/dataset_test.rb` | New |
 | `test/workbench/eval_result_writer_test.rb` | New |
+| `test/workbench/eval_scaffolder_test.rb` | New |
+| `test/workbench/eval_checker_test.rb` | New |
+| `test/workbench/eval_dataset_cli_test.rb` | New |
 
 ---
 
 ## Success Criteria
 
-### PR 1: Core Runtime
+### Shipped (PR 2)
 
-- [ ] An eval class can declare `evaluates`, `dataset`, and `metric` at the class level
-- [ ] A task or pipeline can declare `evaluated_by` to attach one or more evals
-- [ ] `Eval.find(:name)` resolves an eval class by underscored name
-- [ ] `Eval.for_subject(:name)` returns all evals with a matching `evaluates` declaration
-- [ ] `Dataset.find(:name)` loads a YAML file from `datasets/`
-- [ ] Dataset discovers flat files as cases and directories as cases using default rules
-- [ ] Dataset raises an error when zero cases are discovered
-- [ ] `workbench eval run --name <eval_name>` runs the eval end-to-end and prints a summary
-- [ ] `workbench eval run --subject <subject_name>` runs all evals attached to the subject
-- [ ] `run_subject` returns the pipeline's full context hash
-- [ ] `record_case_result` with `passed: true/false` contributes to `pass_rate` statistic
-- [ ] Named metrics are aggregated by their declared type across cases
-- [ ] `setup` and `teardown` are called once per eval run if defined
-- [ ] `eval_results/YYYY-MM-DD/<eval_name>/summary.txt` is written after each run
-- [ ] `eval_results/YYYY-MM-DD/<eval_name>/run.json` is written with normalized structure
-- [ ] Repeated runs on the same day produce `_2`, `_3`... suffixed directories
-
-### PR 2: Full Dataset Discovery + Inspect
-
-- [ ] `directory: case` treats immediate child directories as cases; sibling files ignored
-- [ ] `directory: group` treats immediate child directories as groups; default discovery applied within each
-- [ ] `case.inputs` / `case.outputs` hints populate `EvalCase#inputs` and `EvalCase#outputs`
-- [ ] `group.include` / `group.ignore` filter files within group scope
-- [ ] `case.include` / `case.ignore` filter files within case scope
-- [ ] Empty directories are skipped as cases in all discovery modes
-- [ ] Hidden files and common OS junk excluded by default
-- [ ] `workbench eval dataset inspect <name>` prints groups, cases, and file membership as the runtime would resolve them
-- [ ] `dataset inspect` surfaces warnings for files directly under group directories
-
-### PR 3: CLI Ergonomics
-
-- [ ] `workbench eval create <name> --for <subject>` creates `evals/<name>.rb`, `datasets/<name>.yml`, and patches subject
-- [ ] `workbench eval create` with multiple `--for` subjects patches all of them
-- [ ] `workbench eval link <name> --for <subject>` patches existing eval and subject files
-- [ ] `workbench eval check` reports `[missing-eval]` for unresolvable `evaluated_by` references
-- [ ] `workbench eval check` reports `[missing-subject]` for unresolvable `evaluates` references
-- [ ] `workbench eval check` reports `[orphaned-eval]` for eval files with no linked subject
-- [ ] `workbench eval check` reports `[broken-dataset]` for missing or zero-case datasets
-- [ ] `workbench eval check` exits non-zero when any issue is found
-- [ ] `workbench eval check` exits zero when no issues are found (suitable for CI)
+- [x] An eval class can declare `evaluates`, `dataset`, and `metric` at the class level
+- [x] A task or pipeline can declare `evaluated_by` to attach one or more evals
+- [x] `Eval.find(:name)` resolves an eval class by underscored name
+- [x] `Eval.for_subject(:name)` returns all evals with a matching `evaluates` declaration
+- [x] `Dataset.find(:name)` loads a YAML file from `datasets/`
+- [x] Dataset discovers flat files as cases and directories as cases using default rules
+- [x] Dataset raises an error when zero cases are discovered
+- [x] `workbench eval run --name <eval_name>` runs the eval end-to-end and prints a summary
+- [x] `workbench eval run --subject <subject_name>` runs all evals attached to the subject
+- [x] `run_subject` returns the pipeline's full context hash
+- [x] `record_case_result` with `passed: true/false` contributes to `pass_rate` statistic
+- [x] Named metrics are aggregated by their declared type across cases
+- [x] `setup` and `teardown` are called once per eval run if defined
+- [x] `eval_results/YYYY-MM-DD/<eval_name>/summary.txt` is written after each run
+- [x] `eval_results/YYYY-MM-DD/<eval_name>/run.json` is written with normalized structure
+- [x] Repeated runs on the same day produce `_2`, `_3`... suffixed directories
+- [x] `directory: case` treats immediate child directories as cases; sibling files ignored
+- [x] `directory: group` treats immediate child directories as groups; default discovery applied within each
+- [x] `case.inputs` / `case.outputs` hints populate `EvalCase#inputs` and `EvalCase#outputs`
+- [x] `group.include` / `group.ignore` filter files within group scope
+- [x] `case.include` / `case.ignore` filter files within case scope
+- [x] Empty directories are skipped as cases in all discovery modes
+- [x] Hidden files and common OS junk excluded by default
+- [x] `workbench eval dataset inspect <name>` prints groups, cases, and file membership as the runtime would resolve them
+- [x] `dataset inspect` surfaces warnings for files directly under group directories
+- [x] `workbench eval create <name> --for <subject>` creates `evals/<name>.rb`, `datasets/<name>.yml`, and patches subject
+- [x] `workbench eval create` with multiple `--for` subjects patches all of them
+- [x] `workbench eval link <name> --for <subject>` patches existing eval and subject files
+- [x] `workbench eval check` reports `[missing-eval]` for unresolvable `evaluated_by` references
+- [x] `workbench eval check` reports `[missing-subject]` for unresolvable `evaluates` references
+- [x] `workbench eval check` reports `[orphaned-eval]` for eval files with no linked subject
+- [x] `workbench eval check` reports `[broken-dataset]` for missing or zero-case datasets
+- [x] `workbench eval check` exits non-zero when any issue is found
+- [x] `workbench eval check` exits zero when no issues are found (suitable for CI)
