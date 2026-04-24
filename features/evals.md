@@ -155,7 +155,7 @@ file.read           # String — file contents
 
 ## Implementation Plan
 
-### Phase 1: Core Data Model
+### Phase 1: Core Data Model ✅
 
 **1. `Workbench::Eval` base class** (`lib/workbench/eval.rb`)
 
@@ -206,26 +206,29 @@ Sort order defaults to ascending; configurable via `sort:`.
 
 ---
 
-### Phase 2: Eval Runner + `workbench eval run`
+### Phase 2: Eval Runner + `workbench eval run` ✅
 
 **6. `Workbench::EvalRunner`** (`lib/workbench/eval_runner.rb`)
 
-- `EvalRunner.new(eval_class)` — holds the eval class
+- `EvalRunner.new(eval_class, continue_on_error: false)` — holds the eval class and error mode
 - `#run` — full lifecycle:
   1. Resolve dataset; discover cases
   2. Instantiate eval; call `setup` if defined
   3. For each declared subject:
-     a. For each case (in discovery order): set `current_subject` and `current_case` on instance; call `instance.run`; catch and record any uncaught exceptions as case errors
+     a. For each case (in discovery order): set `current_subject` and `current_case` on instance; call `instance.run`; on exception either re-raise (default) or record as case error and continue (`--continue-on-error`)
   4. Call `teardown` if defined
   5. Aggregate per-subject metrics by declared type
   6. Compute per-subject `pass_rate` and `pass_count` from `passed:` booleans
-  7. Return structured `EvalRunResult`
-- `EvalRunResult` — value object holding run_id, timestamps, per-subject results, per-case results
+  7. Return `EvalRunResult` struct
+- `EvalRunResult`, `SubjectResult` — Struct value objects holding run_id, timestamps, per-subject and per-case results
+- `EvalRunner.print_result(result)` — pretty-prints to stdout
 
-**7. `workbench eval` subcommand group** (`lib/workbench/cli.rb`)
+**7. `workbench eval` subcommand group** (`lib/workbench/eval_cli.rb`, registered in `lib/workbench/cli.rb`)
 
-- Introduce `Workbench::EvalCLI < Thor` registered as `subcommand "eval", EvalCLI` in `Workbench::CLI`
-- `eval run --name` / `--subject` — validates exactly one provided; resolves eval(s); calls `EvalRunner#run` for each; prints summary
+- `Workbench::EvalCLI < Thor` registered as `subcommand "eval", EvalCLI` in `Workbench::CLI`
+- `eval run --name` / `--subject` / `--continue-on-error` — validates exactly one of name/subject; resolves eval class(es); runs via `EvalRunner`; prints result
+- **Note:** `run` is a Thor reserved word. The method is named `run_eval` with `map "run" => :run_eval` so `workbench eval run` works as expected.
+- `--subject` errors immediately if the subject has no `evaluated_by` declarations. Error message will reference `workbench eval check` once that command is built (Phase 6).
 
 **Pretty-printed console output:**
 
@@ -234,18 +237,16 @@ Eval:     parse_itinerary_email_basic_eval
 Subject:  parse_itinerary_email
 Dataset:  golden_emails (10 cases)
 
-  Pass rate:    8/10  (80.0%)
+  Pass rate:  8/10  (80.0%)
   exact_match:  0.750
 
   FAILED  case_04  (exact_match: 0.0)
-  FAILED  case_09  (exact_match: 0.0)
-
-Results written to eval_results/2026-04-23/parse_itinerary_email_basic_eval/
+  ERROR   case_05  RuntimeError: pipeline crashed
 ```
 
 **Tests:**
 
-- `test/workbench/eval_runner_test.rb` — lifecycle ordering (setup → cases → teardown), metric aggregation by type, pass_rate computation, error capture; pipeline execution stubbed to avoid filesystem dependency
+- `test/workbench/eval_runner_test.rb` — lifecycle ordering (setup → cases → teardown), multi-subject sequencing, metric aggregation by all five types, pass_rate computation, `continue_on_error` behavior, error message format; pipeline execution stubbed via eval subclass that calls `record_case_result` directly (22 tests)
 
 ---
 
