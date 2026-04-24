@@ -302,7 +302,7 @@ Note: `subject_type` and `duration_ms` omitted from MVP; metrics serialized as f
 
 ---
 
-### Phase 4: Advanced Dataset Discovery
+### Phase 4: Advanced Dataset Discovery ✅
 
 **9. Extend `Workbench::Dataset`** (`lib/workbench/dataset.rb`)
 
@@ -350,9 +350,15 @@ case:
     - "expected/**"
 ```
 
+**Implementation notes:**
+
+- `case.include`/`case.ignore` layer on top of top-level patterns (AND logic)
+- `@warnings` collected during `cases` call and exposed via `#warnings`; consumed by `dataset inspect` in Phase 5
+- `EvalCase#files` always contains all discovered files; `inputs`/`outputs` are classified subsets
+
 **Tests:**
 
-- Extend `test/workbench/dataset_test.rb` — `directory: case`, `directory: group`, hints, nested filters, empty-folder skipping; all against `Dir.mktmpdir`
+- Extended `test/workbench/dataset_test.rb` — `directory: case` (dirs-as-cases, sibling file exclusion, empty dir skipping, nested payload), `directory: group` (group assignment, stray file exclusion, warnings, group-level ignore), `case.inputs`/`case.outputs` hints (classification, unmatched files remain in `files`), `case.include`/`case.ignore` (16 new tests)
 
 ---
 
