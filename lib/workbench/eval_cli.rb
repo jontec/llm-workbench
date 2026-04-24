@@ -1,5 +1,10 @@
+require_relative 'eval_dataset_cli'
+
 module Workbench
   class EvalCLI < Thor
+    desc "dataset SUBCOMMAND", "Dataset commands (inspect)"
+    subcommand "dataset", EvalDatasetCLI
+
     desc "run", "Run an eval by name or by subject"
     option :name,              type: :string,  desc: "Eval name to run"
     option :subject,           type: :string,  desc: "Run all evals attached to this subject"
