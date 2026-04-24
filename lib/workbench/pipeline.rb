@@ -7,7 +7,7 @@ module Workbench
   PipelineExtension = ".y*ml" # yml or yaml
 
   class Pipeline
-    attr_reader :name, :task_list, :tasks, :output, :current_task
+    attr_reader :name, :task_list, :tasks, :output, :current_task, :eval_names
     attr_reader :telemetry
     attr_accessor :context
     include Workbench::Telemetry
@@ -109,7 +109,8 @@ module Workbench
     def load_from_file(path_to_pipeline)
       @telemetry.in_span("load_pipeline") do |span|
         yaml = YAML.load_file(path_to_pipeline)
-        @name = yaml["name"]
+        @name       = yaml["name"]
+        @eval_names = Array(yaml["evaluated_by"]).map(&:to_sym)
         index_tasks(yaml["tasks"])
       end
     end

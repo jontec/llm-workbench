@@ -7,6 +7,15 @@ module Workbench
     class << self
       attr_reader :input_definitions, :output_definitions
 
+      def evaluated_by(name)
+        @eval_names ||= []
+        @eval_names << name.to_sym
+      end
+
+      def eval_names
+        @eval_names || []
+      end
+
       def input(name, **opts)
         @input_definitions ||= {}
         @input_definitions[name.to_sym] = opts
