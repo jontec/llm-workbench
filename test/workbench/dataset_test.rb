@@ -350,6 +350,251 @@ class DatasetTest < Minitest::Test
     end
   end
 
+  # ---------------------------------------------------------------------------
+  # directory: case mode
+  # ---------------------------------------------------------------------------
+
+  def test_case_mode_uses_dirs_as_cases
+    with_fixture_dir do |fixtures_root|
+      FileUtils.mkdir_p(File.join(fixtures_root, 'case_01'))
+      write_file(File.join(fixtures_root, 'case_01'), 'email.txt', 'hi')
+      FileUtils.mkdir_p(File.join(fixtures_root, 'case_02'))
+      write_file(File.join(fixtures_root, 'case_02'), 'email.txt', 'bye')
+
+      ds = dataset_for(fixtures_root, directory: 'case')
+      assert_equal ['case_01', 'case_02'], ds.cases.map(&:id)
+    end
+  end
+
+  def test_case_mode_ignores_sibling_files
+    with_fixture_dir do |fixtures_root|
+      FileUtils.mkdir_p(File.join(fixtures_root, 'case_01'))
+      write_file(File.join(fixtures_root, 'case_01'), 'email.txt', 'hi')
+      write_file(fixtures_root, 'stray.txt', 'ignored')
+
+      ds = dataset_for(fixtures_root, directory: 'case')
+      assert_equal 1, ds.cases.length
+      assert_equal 'case_01', ds.cases.first.id
+    end
+  end
+
+  def test_case_mode_skips_empty_dirs
+    with_fixture_dir do |fixtures_root|
+      FileUtils.mkdir_p(File.join(fixtures_root, 'empty'))
+      FileUtils.mkdir_p(File.join(fixtures_root, 'full'))
+      write_file(File.join(fixtures_root, 'full'), 'email.txt', 'hi')
+
+      ds = dataset_for(fixtures_root, directory: 'case')
+      assert_equal ['full'], ds.cases.map(&:id)
+    end
+  end
+
+  def test_case_mode_collects_nested_files_as_payload
+    with_fixture_dir do |fixtures_root|
+      case_dir = File.join(fixtures_root, 'case_01')
+      sub_dir  = File.join(case_dir, 'input')
+      FileUtils.mkdir_p(sub_dir)
+      write_file(case_dir, 'top.txt', 'a')
+      write_file(sub_dir,  'nested.txt', 'b')
+
+      ds    = dataset_for(fixtures_root, directory: 'case')
+      files = ds.cases.first.files
+      assert_equal ['nested.txt', 'top.txt'], files.map(&:name).sort
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # directory: group mode
+  # ---------------------------------------------------------------------------
+
+  def test_group_mode_treats_top_dirs_as_groups
+    with_fixture_dir do |fixtures_root|
+      ['easy', 'hard'].each do |group|
+        dir = File.join(fixtures_root, group, 'case_01')
+        FileUtils.mkdir_p(dir)
+        write_file(dir, 'email.txt', 'hi')
+      end
+
+      ds     = dataset_for(fixtures_root, directory: 'group')
+      groups = ds.cases.map(&:group_name).uniq.sort
+      assert_equal ['easy', 'hard'], groups
+    end
+  end
+
+  def test_group_mode_applies_default_discovery_within_group
+    with_fixture_dir do |fixtures_root|
+      group_dir = File.join(fixtures_root, 'easy')
+      ['case_01', 'case_02'].each do |c|
+        dir = File.join(group_dir, c)
+        FileUtils.mkdir_p(dir)
+        write_file(dir, 'email.txt', 'hi')
+      end
+
+      ds    = dataset_for(fixtures_root, directory: 'group')
+      cases = ds.cases
+      assert_equal 2, cases.length
+      assert_equal ['case_01', 'case_02'], cases.map(&:id).sort
+    end
+  end
+
+  def test_group_mode_sets_group_name_on_cases
+    with_fixture_dir do |fixtures_root|
+      dir = File.join(fixtures_root, 'easy', 'case_01')
+      FileUtils.mkdir_p(dir)
+      write_file(dir, 'email.txt', 'hi')
+
+      ds = dataset_for(fixtures_root, directory: 'group')
+      assert_equal 'easy', ds.cases.first.group_name
+    end
+  end
+
+  def test_group_mode_files_at_group_level_are_excluded
+    with_fixture_dir do |fixtures_root|
+      group_dir = File.join(fixtures_root, 'easy')
+      case_dir  = File.join(group_dir, 'case_01')
+      FileUtils.mkdir_p(case_dir)
+      write_file(case_dir,  'email.txt', 'hi')
+      write_file(group_dir, 'stray.txt', 'ignored')
+
+      ds    = dataset_for(fixtures_root, directory: 'group')
+      files = ds.cases.first.files
+      assert_equal 1, files.length
+      assert_equal 'email.txt', files.first.name
+    end
+  end
+
+  def test_group_mode_stray_files_recorded_as_warnings
+    with_fixture_dir do |fixtures_root|
+      group_dir = File.join(fixtures_root, 'easy')
+      case_dir  = File.join(group_dir, 'case_01')
+      FileUtils.mkdir_p(case_dir)
+      write_file(case_dir,  'email.txt', 'hi')
+      write_file(group_dir, 'stray.txt', 'ignored')
+
+      ds = dataset_for(fixtures_root, directory: 'group')
+      ds.cases
+      assert_equal 1, ds.warnings.length
+      assert_equal :stray_file,  ds.warnings.first[:type]
+      assert_equal 'easy',       ds.warnings.first[:group]
+    end
+  end
+
+  def test_group_ignore_filters_within_group
+    with_fixture_dir do |fixtures_root|
+      group_dir = File.join(fixtures_root, 'easy')
+      ['case_01', 'case_02'].each do |c|
+        dir = File.join(group_dir, c)
+        FileUtils.mkdir_p(dir)
+        write_file(dir, 'email.txt', 'hi')
+      end
+
+      ds    = dataset_for(fixtures_root, directory: 'group',
+                          group_config: { 'ignore' => ['case_02'] })
+      cases = ds.cases
+      assert_equal ['case_01'], cases.map(&:id)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # case.inputs / case.outputs hints
+  # ---------------------------------------------------------------------------
+
+  def test_case_inputs_hint_classifies_files
+    with_fixture_dir do |fixtures_root|
+      case_dir = File.join(fixtures_root, 'case_01')
+      input_dir = File.join(case_dir, 'input')
+      FileUtils.mkdir_p(input_dir)
+      write_file(input_dir, 'email.txt', 'hi')
+      write_file(case_dir,  'other.txt', 'bye')
+
+      ds   = dataset_for(fixtures_root, directory: 'case',
+                         case_config: { 'inputs' => ['input/**'] })
+      kase = ds.cases.first
+      assert_equal 1, kase.inputs.length
+      assert_equal 'email.txt', kase.inputs.first.name
+    end
+  end
+
+  def test_case_outputs_hint_classifies_files
+    with_fixture_dir do |fixtures_root|
+      case_dir    = File.join(fixtures_root, 'case_01')
+      output_dir  = File.join(case_dir, 'expected')
+      FileUtils.mkdir_p(output_dir)
+      write_file(output_dir, 'result.json', '{}')
+      write_file(case_dir,   'input.txt',   'hi')
+
+      ds   = dataset_for(fixtures_root, directory: 'case',
+                         case_config: { 'outputs' => ['expected/**'] })
+      kase = ds.cases.first
+      assert_equal 1, kase.outputs.length
+      assert_equal 'result.json', kase.outputs.first.name
+    end
+  end
+
+  def test_unmatched_files_remain_in_files
+    with_fixture_dir do |fixtures_root|
+      case_dir = File.join(fixtures_root, 'case_01')
+      FileUtils.mkdir_p(case_dir)
+      write_file(case_dir, 'input.txt',  'hi')
+      write_file(case_dir, 'output.txt', 'bye')
+      write_file(case_dir, 'meta.txt',   'extra')
+
+      ds   = dataset_for(fixtures_root, directory: 'case',
+                         case_config: { 'inputs' => ['input.txt'], 'outputs' => ['output.txt'] })
+      kase = ds.cases.first
+      assert_equal 3, kase.files.length
+      assert_equal 1, kase.inputs.length
+      assert_equal 1, kase.outputs.length
+    end
+  end
+
+  def test_no_hints_leaves_inputs_outputs_empty
+    with_fixture_dir do |fixtures_root|
+      case_dir = File.join(fixtures_root, 'case_01')
+      FileUtils.mkdir_p(case_dir)
+      write_file(case_dir, 'email.txt', 'hi')
+
+      ds   = dataset_for(fixtures_root, directory: 'case')
+      kase = ds.cases.first
+      assert_equal [], kase.inputs
+      assert_equal [], kase.outputs
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # case.include / case.ignore
+  # ---------------------------------------------------------------------------
+
+  def test_case_ignore_filters_files_within_case
+    with_fixture_dir do |fixtures_root|
+      case_dir = File.join(fixtures_root, 'case_01')
+      FileUtils.mkdir_p(case_dir)
+      write_file(case_dir, 'email.txt',  'hi')
+      write_file(case_dir, 'script.rb',  'puts')
+
+      ds    = dataset_for(fixtures_root, directory: 'case',
+                          case_config: { 'ignore' => ['*.rb'] })
+      files = ds.cases.first.files
+      assert_equal 1, files.length
+      assert_equal 'email.txt', files.first.name
+    end
+  end
+
+  def test_case_include_limits_files_within_case
+    with_fixture_dir do |fixtures_root|
+      case_dir = File.join(fixtures_root, 'case_01')
+      FileUtils.mkdir_p(case_dir)
+      write_file(case_dir, 'email.txt', 'hi')
+      write_file(case_dir, 'data.json', '{}')
+
+      ds    = dataset_for(fixtures_root, directory: 'case',
+                          case_config: { 'include' => ['*.txt'] })
+      files = ds.cases.first.files
+      assert_equal 1, files.length
+      assert_equal 'email.txt', files.first.name
+    end
+  end
+
   private
 
   def with_dataset_yaml(content)
@@ -370,15 +615,15 @@ class DatasetTest < Minitest::Test
     end
   end
 
-  def dataset_for(fixture_root, include: nil, ignore: nil, sort: nil)
-    dataset_for_path(fixture_root, include: include, ignore: ignore, sort: sort)
-  end
-
-  def dataset_for_path(fixture_root, include: nil, ignore: nil, sort: nil)
+  def dataset_for(fixture_root, include: nil, ignore: nil, sort: nil,
+                  directory: nil, case_config: {}, group_config: {})
     DirectPathDataset.new(fixture_root,
       include_patterns: include || ['**/*'],
       ignore_patterns:  ignore  || [],
-      sort:             sort    || 'asc'
+      sort:             sort    || 'asc',
+      directory_mode:   directory,
+      case_config:      case_config,
+      group_config:     group_config
     )
   end
 
@@ -391,18 +636,29 @@ end
 # Test-only subclass that takes an absolute fixture path directly,
 # bypassing the FixturesDir constant so tests don't depend on the filesystem layout.
 class DirectPathDataset < Workbench::Dataset
-  def initialize(fixture_path, include_patterns:, ignore_patterns:, sort:)
+  def initialize(fixture_path, include_patterns:, ignore_patterns:, sort:,
+                 directory_mode: nil, case_config: {}, group_config: {})
     @fixture_path     = fixture_path
     @name             = File.basename(fixture_path)
     @path             = fixture_path
     @include_patterns = include_patterns
     @ignore_patterns  = ignore_patterns
     @sort             = sort
+    @directory_mode   = directory_mode
+    @case_config      = case_config
+    @group_config     = group_config
+    @warnings         = []
   end
 
   def cases
     raise ArgumentError, "Dataset fixture path '#{@fixture_path}' does not exist" unless File.exist?(@fixture_path)
-    result = discover(@fixture_path)
+    @warnings = []
+    result = case @directory_mode
+             when 'case'  then discover_case_mode(@fixture_path)
+             when 'group' then discover_group_mode(@fixture_path)
+             else              discover_default(@fixture_path)
+             end
+    result = result.map { |c| apply_hints(c) }
     raise ArgumentError, "Dataset '#{@name}' discovered zero cases" if result.empty?
     result
   end
