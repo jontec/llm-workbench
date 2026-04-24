@@ -398,7 +398,7 @@ Mode:     group (2 groups, 4 cases)
 
 ---
 
-### Phase 6: CLI Developer Ergonomics
+### Phase 6: CLI Developer Ergonomics ✅
 
 **Naming convention:** Evals are named without a `_eval` suffix. The name passed to `create` and `link` is used as-is for the filename and class name. Example: `workbench eval create parse_itinerary_email_basic` → `evals/parse_itinerary_email_basic.rb`, class `ParseItineraryEmailBasic`. This mirrors how tasks and pipelines are named.
 
@@ -420,7 +420,12 @@ Mode:     group (2 groups, 4 cases)
 - Runs all integrity checks; exits non-zero if any issues found (safe for CI)
 - Reports `[missing-eval]`, `[missing-subject]`, `[orphaned-eval]`, `[broken-dataset]`
 - Does not modify files
-- Parses pipeline YAMLs directly (avoids instantiating Pipeline objects); loads task files via glob and inspects `eval_names` via `ObjectSpace`
+- **Implementation note:** `EvalChecker` parses eval, task, and pipeline files as text (regex scanning for DSL declarations) rather than requiring them. This avoids global `Eval.subclasses` registry contamination and CWD-relative path dependencies — critical for correctness in tests and in projects run from non-standard working directories. Dataset checking uses direct fixture path resolution rather than `Dataset.find`.
+
+**Tests:**
+
+- `test/workbench/eval_scaffolder_test.rb` — eval file creation and content, dataset stub creation, no-overwrite of existing dataset, multi-subject scaffolding, task/pipeline patching, idempotent patching (no duplicates), `link` patching and missing-eval error (18 tests)
+- `test/workbench/eval_checker_test.rb` — clean project, all four issue types (detected and not detected), format_issue output for all types (22 tests)
 
 ---
 

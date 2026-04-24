@@ -1,4 +1,6 @@
 require_relative 'eval_dataset_cli'
+require_relative 'eval_scaffolder'
+require_relative 'eval_checker'
 
 module Workbench
   class EvalCLI < Thor
@@ -43,6 +45,43 @@ module Workbench
     end
 
     map "run" => :run_eval
+
+    desc "create NAME", "Scaffold a new eval, dataset stub, and patch subject(s)"
+    option :for, type: :string, required: true, desc: "Subject name(s), comma-separated"
+    def create(name)
+      subjects  = options[:for].split(',').map(&:strip)
+      scaffolder = EvalScaffolder.new(name, subjects)
+      errors = scaffolder.create
+      if errors.any?
+        errors.each { |e| puts "Error: #{e}" }
+        exit 1
+      end
+    end
+
+    desc "link NAME", "Link an existing eval to subject(s)"
+    option :for, type: :string, required: true, desc: "Subject name(s), comma-separated"
+    def link(name)
+      subjects  = options[:for].split(',').map(&:strip)
+      scaffolder = EvalScaffolder.new(name, subjects)
+      errors = scaffolder.link
+      if errors.any?
+        errors.each { |e| puts "Error: #{e}" }
+        exit 1
+      end
+    end
+
+    desc "check", "Validate eval linkage and project consistency"
+    def check
+      checker = EvalChecker.new
+      issues  = checker.check
+      if issues.empty?
+        puts "No issues found."
+        exit 0
+      else
+        issues.each { |i| puts EvalChecker.format_issue(i) }
+        exit 1
+      end
+    end
 
     private
 
