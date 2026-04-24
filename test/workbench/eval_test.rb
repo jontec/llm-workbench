@@ -52,14 +52,14 @@ class EvalTest < Minitest::Test
 
   def test_eval_name_underscores_class_name
     stub_class = Class.new(Workbench::Eval)
-    stub_class.define_singleton_method(:name) { "ParseItineraryEmailBasicEval" }
-    assert_equal :parse_itinerary_email_basic_eval, stub_class.eval_name
+    stub_class.define_singleton_method(:name) { "ParseItineraryEmailBasic" }
+    assert_equal :parse_itinerary_email_basic, stub_class.eval_name
   end
 
   def test_eval_name_strips_module_prefix
     stub_class = Class.new(Workbench::Eval)
-    stub_class.define_singleton_method(:name) { "Workbench::SomeEval" }
-    assert_equal :some_eval, stub_class.eval_name
+    stub_class.define_singleton_method(:name) { "Workbench::ContractCheck" }
+    assert_equal :contract_check, stub_class.eval_name
   end
 
   # ---------------------------------------------------------------------------
@@ -72,8 +72,8 @@ class EvalTest < Minitest::Test
   end
 
   def test_find_returns_matching_subclass
-    klass = fresh_named_eval_class("FindableEval")
-    found = Workbench::Eval.subclasses.find { |s| s.eval_name == :findable_eval }
+    klass = fresh_named_eval_class("FindableBasic")
+    found = Workbench::Eval.subclasses.find { |s| s.eval_name == :findable_basic }
     assert_equal klass, found
   end
 

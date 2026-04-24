@@ -63,7 +63,7 @@ workbench eval run --subject parse_itinerary_email
 workbench eval create parse_itinerary_email_basic --for parse_itinerary_email
 
 # Link an existing eval to one or more subjects
-workbench eval link shared_contract_eval --for parse_itinerary_email,parse_booking_email
+workbench eval link shared_contract --for parse_itinerary_email,parse_booking_email
 
 # Validate eval linkage across the project
 workbench eval check
@@ -77,7 +77,7 @@ workbench eval dataset inspect golden_emails
 ### `Workbench::Eval` (base class)
 
 ```ruby
-class ParseItineraryEmailBasicEval < Workbench::Eval
+class ParseItineraryEmailBasic < Workbench::Eval
   evaluates :parse_itinerary_email          # repeatable; drives --subject lookup
   dataset   :golden_emails
   metric    :exact_match                    # type: :average is default
@@ -400,17 +400,19 @@ Mode:     group (2 groups, 4 cases)
 
 ### Phase 6: CLI Developer Ergonomics
 
+**Naming convention:** Evals are named without a `_eval` suffix. The name passed to `create` and `link` is used as-is for the filename and class name. Example: `workbench eval create parse_itinerary_email_basic` → `evals/parse_itinerary_email_basic.rb`, class `ParseItineraryEmailBasic`. This mirrors how tasks and pipelines are named.
+
 **11. `workbench eval create NAME --for SUBJECT[,SUBJECT]`**
 
-- Creates `evals/<name>_eval.rb` with scaffolded class inheriting `Workbench::Eval`
+- Creates `evals/<name>.rb` with scaffolded class inheriting `Workbench::Eval`
 - Creates `datasets/<name>.yml` stub (name field populated)
-- Patches each subject file to add `evaluated_by :<name>_eval` if not already present
+- Patches each subject file to add `evaluated_by :<name>` if not already present
 - Adds `evaluates :subject` declaration for each subject in the eval scaffold
 
 **12. `workbench eval link NAME --for SUBJECT[,SUBJECT]`**
 
-- Patches subject files to add `evaluated_by` if not already present
-- Patches eval file to add `evaluates` if not already present
+- Patches subject files to add `evaluated_by :<name>` if not already present
+- Patches eval file to add `evaluates :subject` if not already present
 - Does not overwrite other file content
 
 **13. `workbench eval check`**
@@ -418,6 +420,7 @@ Mode:     group (2 groups, 4 cases)
 - Runs all integrity checks; exits non-zero if any issues found (safe for CI)
 - Reports `[missing-eval]`, `[missing-subject]`, `[orphaned-eval]`, `[broken-dataset]`
 - Does not modify files
+- Parses pipeline YAMLs directly (avoids instantiating Pipeline objects); loads task files via glob and inspects `eval_names` via `ObjectSpace`
 
 ---
 
@@ -511,7 +514,7 @@ No new gem dependencies. All new functionality uses Ruby stdlib and existing wor
 
 ### PR 3: CLI Ergonomics
 
-- [ ] `workbench eval create <name> --for <subject>` creates eval file, dataset stub, and patches subject
+- [ ] `workbench eval create <name> --for <subject>` creates `evals/<name>.rb`, `datasets/<name>.yml`, and patches subject
 - [ ] `workbench eval create` with multiple `--for` subjects patches all of them
 - [ ] `workbench eval link <name> --for <subject>` patches existing eval and subject files
 - [ ] `workbench eval check` reports `[missing-eval]` for unresolvable `evaluated_by` references
